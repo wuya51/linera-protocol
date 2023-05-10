@@ -94,6 +94,8 @@ pub enum WasmExecutionError {
     #[cfg(feature = "wasmtime")]
     #[error("Failed to execute WASM module (Wasmtime)")]
     ExecuteModuleInWasmtime(#[from] ::wasmtime::Trap),
+    #[error("Attempt to call contract system API from a service")]
+    ContractApiCallFromService,
 }
 
 #[async_trait]
