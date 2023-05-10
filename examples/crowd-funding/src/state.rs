@@ -4,10 +4,7 @@
 use fungible::AccountOwner;
 use linera_sdk::base::{Amount, ApplicationId, Timestamp};
 use linera_views::{
-    common::Context,
-    map_view::MapView,
-    register_view::RegisterView,
-    views::{RootView, View},
+    common::Context, map_view::MapView, register_view::RegisterView, views::RootView,
 };
 use serde::{Deserialize, Serialize};
 
