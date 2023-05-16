@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use fungible::AccountOwner;
-use linera_sdk::base::{Amount, ApplicationId, Timestamp};
-use linera_views::{
-    common::Context, map_view::MapView, register_view::RegisterView, views::RootView,
+use linera_sdk::{
+    base::{Amount, ApplicationId, Timestamp},
+    views::{MapView, RegisterView, ViewStorageContext},
 };
+use linera_views::views::RootView;
 use serde::{Deserialize, Serialize};
 
 /// The parameters required to create a crowd-funding campaign.
@@ -35,13 +36,14 @@ pub enum Status {
 
 /// The crowd-funding campaign's state.
 #[derive(RootView)]
-pub struct CrowdFunding<C> {
+#[specific_context = "ViewStorageContext"]
+pub struct CrowdFunding {
     /// The status of the campaign.
-    pub status: RegisterView<C, Status>,
+    pub status: RegisterView<Status>,
     /// The map of pledges that will be collected if the campaign succeeds.
-    pub pledges: MapView<C, AccountOwner, Amount>,
+    pub pledges: MapView<AccountOwner, Amount>,
     /// The parameters that determine the details the campaign.
-    pub parameters: RegisterView<C, Option<Parameters>>,
+    pub parameters: RegisterView<Option<Parameters>>,
 }
 
 #[allow(dead_code)]
@@ -52,11 +54,7 @@ impl Status {
     }
 }
 
-impl<C> CrowdFunding<C>
-where
-    C: Context + Send + Sync + Clone + 'static,
-    linera_views::views::ViewError: From<C::Error>,
-{
+impl CrowdFunding {
     /// Retrieves the campaign [`Parameters`] stored in the application's state.
     pub fn parameters(&self) -> &Parameters {
         self.parameters
