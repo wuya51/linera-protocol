@@ -518,6 +518,21 @@ impl SyncRuntimeInternal<UserServiceInstance> {
             .send_request(|callback| Request::LoadService { id, callback })?
             .recv_response()
     }
+
+    /// Initializes a service instance with this runtime.
+    fn load_service_instance(
+        &mut self,
+        id: UserApplicationId,
+    ) -> Result<(Arc<Mutex<UserServiceInstance>>, Vec<u8>), ExecutionError> {
+        let (code, description) = self.load_service(id)?;
+        let instance = code.instantiate(SyncRuntime(
+            self.reference
+                .upgrade()
+                .expect("`SyncRuntimeInner` should only be used by `SyncRuntime`"),
+        ))?;
+
+        Ok((Arc::new(Mutex::new(instance)), description.parameters))
+    }
 }
 
 impl<ContractOrService> SyncRuntime<ContractOrService> {
@@ -992,24 +1007,26 @@ impl ServiceRuntime for ServiceSyncRuntime {
         queried_id: UserApplicationId,
         argument: Vec<u8>,
     ) -> Result<Vec<u8>, ExecutionError> {
-        let (query_context, code) = {
+        let (query_context, service) = {
             let mut this = self.inner();
 
             // Load the application.
-            let (code, description) = this.load_service(queried_id)?;
+            let (service, parameters) = this.load_service_instance(queried_id)?;
             // Make the call to user code.
             let query_context = crate::QueryContext {
                 chain_id: this.chain_id,
             };
             this.push_application(ApplicationStatus {
                 id: queried_id,
-                parameters: description.parameters,
+                parameters,
                 signer: None,
             });
-            (query_context, code)
+            (query_context, service)
         };
-        let mut code = code.instantiate(self.clone())?;
-        let response = code.handle_query(query_context, argument)?;
+        let response = service
+            .try_lock()
+            .expect("Applications should not have reentrant calls")
+            .handle_query(query_context, argument)?;
         self.inner().pop_application();
         Ok(response)
     }
