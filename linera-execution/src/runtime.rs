@@ -20,7 +20,7 @@ use linera_base::{
 use linera_views::batch::Batch;
 use oneshot::Receiver;
 use std::{
-    collections::{BTreeMap, HashSet},
+    collections::{BTreeMap, HashMap, HashSet},
     sync::{Arc, Mutex, Weak},
 };
 
@@ -39,6 +39,9 @@ pub struct SyncRuntimeInternal<ContractOrService> {
     /// How to interact with the storage view of the execution state.
     execution_state_sender: ExecutionStateSender,
 
+    /// Application instances loaded in this transaction.
+    loaded_applications:
+        HashMap<UserApplicationId, (ContractOrService, UserApplicationDescription)>,
     /// The current stack of application descriptions.
     call_stack: Vec<ApplicationStatus>,
     /// The set of the IDs of the applications that are in the `call_stack`.
@@ -212,6 +215,7 @@ impl<ContractOrService> SyncRuntimeInternal<ContractOrService> {
         Self {
             chain_id,
             execution_state_sender,
+            loaded_applications: HashMap::new(),
             call_stack: Vec::new(),
             active_applications: HashSet::new(),
             execution_outcomes: Vec::default(),
@@ -290,15 +294,14 @@ impl SyncRuntimeInternal<UserContractInstance> {
     fn load_contract_instance(
         &mut self,
         id: UserApplicationId,
-    ) -> Result<(Arc<Mutex<UserContractInstance>>, UserApplicationDescription), ExecutionError>
-    {
+    ) -> Result<(Arc<Mutex<UserContractInstance>>, Vec<u8>), ExecutionError> {
         let (code, description) = self.load_contract(id)?;
         let instance = code.instantiate(SyncRuntime(
             self.reference
                 .upgrade()
                 .expect("`SyncRuntimeInner` should only be used by `SyncRuntime`"),
         ))?;
-        Ok((Arc::new(Mutex::new(instance)), description))
+        Ok((Arc::new(Mutex::new(instance)), description.parameters))
     }
 
     /// Configures the runtime for executing a call to a different contract.
@@ -311,7 +314,7 @@ impl SyncRuntimeInternal<UserContractInstance> {
         self.check_for_reentrancy(callee_id)?;
 
         // Load the application.
-        let (contract, description) = self.load_contract_instance(callee_id)?;
+        let (contract, parameters) = self.load_contract_instance(callee_id)?;
 
         let caller = self.current_application();
         let caller_id = caller.id;
@@ -331,7 +334,7 @@ impl SyncRuntimeInternal<UserContractInstance> {
         };
         self.push_application(ApplicationStatus {
             id: callee_id,
-            parameters: description.parameters,
+            parameters,
             // Allow further nested calls to be authenticated if this one is.
             signer: authenticated_signer,
         });
