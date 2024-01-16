@@ -524,14 +524,27 @@ impl SyncRuntimeInternal<UserServiceInstance> {
         &mut self,
         id: UserApplicationId,
     ) -> Result<(Arc<Mutex<UserServiceInstance>>, Vec<u8>), ExecutionError> {
-        let (code, description) = self.load_service(id)?;
-        let instance = code.instantiate(SyncRuntime(
-            self.reference
-                .upgrade()
-                .expect("`SyncRuntimeInner` should only be used by `SyncRuntime`"),
-        ))?;
+        // Clippy's suggestion doesn't work because we need to borrow `self` while `entry` is still
+        // held
+        #[allow(clippy::map_entry)]
+        if !self.loaded_applications.contains_key(&id) {
+            let (code, description) = self.load_service(id)?;
+            let instance = code.instantiate(SyncRuntime(
+                self.reference
+                    .upgrade()
+                    .expect("`SyncRuntimeInner` should only be used by `SyncRuntime`"),
+            ))?;
 
-        Ok((Arc::new(Mutex::new(instance)), description.parameters))
+            self.loaded_applications
+                .insert(id, (Arc::new(Mutex::new(instance)), description));
+        }
+
+        let (instance, description) = self
+            .loaded_applications
+            .get(&id)
+            .expect("Application shoud be loaded");
+
+        Ok((instance.clone(), description.parameters.clone()))
     }
 }
 
