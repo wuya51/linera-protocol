@@ -41,7 +41,7 @@ pub struct SyncRuntimeInternal<ContractOrService> {
 
     /// Application instances loaded in this transaction.
     loaded_applications:
-        HashMap<UserApplicationId, (ContractOrService, UserApplicationDescription)>,
+        HashMap<UserApplicationId, (Arc<Mutex<ContractOrService>>, UserApplicationDescription)>,
     /// The current stack of application descriptions.
     call_stack: Vec<ApplicationStatus>,
     /// The set of the IDs of the applications that are in the `call_stack`.
@@ -290,18 +290,32 @@ impl SyncRuntimeInternal<UserContractInstance> {
             .recv_response()
     }
 
-    /// Initializes a contract instance with this runtime.
+    /// Loads a contract instance, initializing it with this runtime if needed.
     fn load_contract_instance(
         &mut self,
         id: UserApplicationId,
     ) -> Result<(Arc<Mutex<UserContractInstance>>, Vec<u8>), ExecutionError> {
-        let (code, description) = self.load_contract(id)?;
-        let instance = code.instantiate(SyncRuntime(
-            self.reference
-                .upgrade()
-                .expect("`SyncRuntimeInner` should only be used by `SyncRuntime`"),
-        ))?;
-        Ok((Arc::new(Mutex::new(instance)), description.parameters))
+        // Clippy's suggestion doesn't work because we need to borrow `self` while `entry` is still
+        // held
+        #[allow(clippy::map_entry)]
+        if !self.loaded_applications.contains_key(&id) {
+            let (code, description) = self.load_contract(id)?;
+            let instance = code.instantiate(SyncRuntime(
+                self.reference
+                    .upgrade()
+                    .expect("`SyncRuntimeInner` should only be used by `SyncRuntime`"),
+            ))?;
+
+            self.loaded_applications
+                .insert(id, (Arc::new(Mutex::new(instance)), description));
+        }
+
+        let (instance, description) = self
+            .loaded_applications
+            .get(&id)
+            .expect("Application shoud be loaded");
+
+        Ok((instance.clone(), description.parameters.clone()))
     }
 
     /// Configures the runtime for executing a call to a different contract.
