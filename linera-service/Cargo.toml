@@ -100,6 +100,7 @@ linera-storage = { workspace = true, features = ["test"] }
 linera-views = { workspace = true, features = ["test"] }
 matching-engine.workspace = true
 native-fungible.workspace = true
+non-fungible.workspace = true
 proptest.workspace = true
 reqwest = { workspace = true, features = ["json"] }
 social.workspace = true
