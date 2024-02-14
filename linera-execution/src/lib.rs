@@ -19,17 +19,11 @@ mod wasm;
 
 use std::{fmt, str::FromStr, sync::Arc};
 
-#[cfg(with_testing)]
-pub use applications::ApplicationRegistry;
-pub use applications::{
-    ApplicationRegistryView, BytecodeLocation, UserApplicationDescription, UserApplicationId,
-};
 use async_graphql::SimpleObject;
 use async_trait::async_trait;
 use custom_debug_derive::Debug;
 use dashmap::DashMap;
 use derive_more::Display;
-pub use execution::ExecutionStateView;
 use linera_base::{
     abi::Abi,
     crypto::CryptoHash,
@@ -42,19 +36,30 @@ use linera_base::{
     ownership::ChainOwnership,
 };
 use linera_views::{batch::Batch, views::ViewError};
-pub use policy::ResourceControlPolicy;
-pub use resources::{ResourceController, ResourceTracker};
 use serde::{Deserialize, Serialize};
-pub use system::{
-    SystemExecutionError, SystemExecutionStateView, SystemMessage, SystemOperation, SystemQuery,
-    SystemResponse,
-};
 use thiserror::Error;
-#[cfg(all(with_testing, any(with_wasmer, with_wasmtime)))]
-pub use wasm::test as wasm_test;
-#[cfg(with_wasm_runtime)]
-pub use wasm::{WasmContractModule, WasmExecutionError, WasmServiceModule};
 
+#[cfg(with_testing)]
+pub use self::applications::ApplicationRegistry;
+#[cfg(all(with_testing, any(with_wasmer, with_wasmtime)))]
+pub use self::wasm::test as wasm_test;
+#[cfg(with_wasm_runtime)]
+pub use self::wasm::{
+    ContractEntrypoints, ContractSystemApi, ServiceEntrypoints, ServiceSystemApi, SystemApiData,
+    ViewSystemApi, WasmContractModule, WasmExecutionError, WasmServiceModule,
+};
+pub use self::{
+    applications::{
+        ApplicationRegistryView, BytecodeLocation, UserApplicationDescription, UserApplicationId,
+    },
+    execution::ExecutionStateView,
+    policy::ResourceControlPolicy,
+    resources::{ResourceController, ResourceTracker},
+    system::{
+        SystemExecutionError, SystemExecutionStateView, SystemMessage, SystemOperation,
+        SystemQuery, SystemResponse,
+    },
+};
 pub use crate::runtime::{ContractSyncRuntime, ServiceSyncRuntime};
 
 /// An implementation of [`UserContractModule`].
@@ -274,12 +279,12 @@ pub struct QueryContext {
 }
 
 pub trait BaseRuntime {
-    type Read: fmt::Debug + Send;
-    type ContainsKey: fmt::Debug + Send;
-    type ReadMultiValuesBytes: fmt::Debug + Send;
-    type ReadValueBytes: fmt::Debug + Send;
-    type FindKeysByPrefix: fmt::Debug + Send;
-    type FindKeyValuesByPrefix: fmt::Debug + Send;
+    type Read: fmt::Debug + Send + Sync;
+    type ContainsKey: fmt::Debug + Send + Sync;
+    type ReadMultiValuesBytes: fmt::Debug + Send + Sync;
+    type ReadValueBytes: fmt::Debug + Send + Sync;
+    type FindKeysByPrefix: fmt::Debug + Send + Sync;
+    type FindKeyValuesByPrefix: fmt::Debug + Send + Sync;
 
     /// The current chain ID.
     fn chain_id(&mut self) -> Result<ChainId, ExecutionError>;

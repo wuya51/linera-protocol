@@ -3,6 +3,7 @@
 
 fn main() {
     cfg_aliases::cfg_aliases! {
+        with_guest: { feature = "guest" },
         with_log: { feature = "log" },
         with_testing: { any(test, feature = "test") },
         with_wasmer: { feature = "wasmer" },

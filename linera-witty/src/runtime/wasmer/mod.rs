@@ -41,7 +41,7 @@ where
     UserData: Send + 'static,
 {
     /// Creates a new [`InstanceBuilder`].
-    pub fn new(engine: Engine, user_data: UserData) -> Self {
+    pub fn new(engine: &Engine, user_data: UserData) -> Self {
         InstanceBuilder {
             store: Store::new(engine),
             imports: Imports::default(),
@@ -122,6 +122,19 @@ impl<UserData> AsStoreMut for EntrypointInstance<UserData> {
 
     fn objects_mut(&mut self) -> &mut StoreObjects {
         self.store.objects_mut()
+    }
+}
+
+impl<UserData> EntrypointInstance<UserData> {
+    /// Returns mutable references to the [`Store`] and the [`wasmer::Instance`] stored inside this
+    /// [`EntrypointInstance`].
+    ///
+    /// The [`wasmer::Instance`] is wrapped inside an [`Option`] which might be [`None`] if this
+    /// [`EntrypointInstance`] was not initialized by [`InstanceBuilder::instantiate`].
+    pub fn as_store_and_instance_mut(
+        &mut self,
+    ) -> (&mut Store, MutexGuard<Option<wasmer::Instance>>) {
+        (&mut self.store, self.instance.instance())
     }
 }
 
@@ -211,6 +224,13 @@ impl<UserData> InstanceSlot<UserData> {
             .exports
             .get_extern(name)
             .cloned()
+    }
+
+    /// Returns a reference to the [`wasmer::Instance`] stored in this [`InstanceSlot`].
+    fn instance(&self) -> MutexGuard<Option<wasmer::Instance>> {
+        self.instance
+            .try_lock()
+            .expect("Unexpected reentrant access to data")
     }
 
     /// Returns a reference to the `UserData` stored in this [`InstanceSlot`].

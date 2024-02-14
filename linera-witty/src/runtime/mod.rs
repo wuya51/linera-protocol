@@ -5,6 +5,8 @@
 
 mod borrowed_instance;
 mod error;
+#[cfg(with_guest)]
+pub mod guest;
 mod memory;
 #[cfg(with_testing)]
 mod test;

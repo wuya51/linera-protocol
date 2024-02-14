@@ -21,6 +21,7 @@ mod primitive_types;
 mod runtime;
 mod type_traits;
 mod util;
+pub mod wit_generation;
 
 pub use frunk::{hlist, hlist::HList, hlist_pat, HCons, HList, HNil};
 #[cfg(with_wit_export)]
@@ -28,6 +29,8 @@ pub use linera_witty_macros::wit_export;
 #[cfg(with_macros)]
 pub use linera_witty_macros::{wit_import, WitLoad, WitStore, WitType};
 
+#[cfg(with_guest)]
+pub use self::runtime::guest;
 #[cfg(with_wasmer)]
 pub use self::runtime::wasmer;
 #[cfg(with_wasmtime)]

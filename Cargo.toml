@@ -138,6 +138,7 @@ wasmparser = "0.101.1"
 wasmtime = "1.0"
 webassembly-test = "0.1.0"
 web-sys = "0.3.69"
+wit-bindgen = "0.16.0"
 wit-bindgen-guest-rust = { version = "0.2.0", package = "linera-wit-bindgen-guest-rust" }
 wit-bindgen-host-wasmer-rust = { version = "0.2.0", package = "linera-wit-bindgen-host-wasmer-rust" }
 wit-bindgen-host-wasmtime-rust = { version = "0.2.0", package = "linera-wit-bindgen-host-wasmtime-rust" }
@@ -201,3 +202,7 @@ opt-level = 3
 version = "0.4.1"
 git = "https://github.com/Twey/rust-indexed-db"
 branch = "no-uuid-wasm-bindgen"
+
+# [patch.crates-io]
+# wit-bindgen-core = { path = "/tmp/wit-bindgen/crates/core" }
+# wit-bindgen = { path = "/tmp/wit-bindgen/crates/guest-rust" }

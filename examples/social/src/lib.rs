@@ -172,10 +172,10 @@ query {
 */
 
 use async_graphql::{InputObject, Request, Response, SimpleObject};
+use linera_sdk::views::{CustomSerialize, ViewError};
 use linera_sdk::{
     base::{ChainId, ContractAbi, ServiceAbi, Timestamp},
     graphql::GraphQLMutationRoot,
-    views::{CustomSerialize, ViewError},
 };
 use serde::{Deserialize, Serialize};
 

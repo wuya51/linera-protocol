@@ -17,6 +17,8 @@ metrics = ["prometheus", "linera-views/metrics"]
 wasmer = [
     "bytes",
     "dep:wasmer",
+    "linera-witty/wasmer",
+    "tracing/log",
     "wasm-encoder",
     "wasmer-middlewares",
     "wasmparser",
@@ -24,6 +26,8 @@ wasmer = [
 ]
 wasmtime = [
     "dep:wasmtime",
+    "linera-witty/wasmtime",
+    "tracing/log",
     "wasm-encoder",
     "wasmparser",
     "wit-bindgen-host-wasmtime-rust",
@@ -45,6 +49,7 @@ futures.workspace = true
 linera-base.workspace = true
 linera-views.workspace = true
 linera-views-derive.workspace = true
+linera-witty = { workspace = true, features = ["macros"] }
 lru.workspace = true
 once_cell.workspace = true
 oneshot.workspace = true
