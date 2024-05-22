@@ -93,11 +93,7 @@ where
         let full_cert = node.state.full_certificate(certificate).await?;
         let response = node
             .state
-            .fully_handle_certificate_with_notifications(
-                full_cert,
-                vec![],
-                Some(&mut notifications),
-            )
+            .fully_handle_certificate_with_notifications(full_cert, &[], Some(&mut notifications))
             .await?;
         node.notifier.handle_notifications(&notifications);
         Ok(response)
@@ -106,7 +102,7 @@ where
     pub async fn handle_certificate(
         &mut self,
         certificate: Certificate,
-        blobs: Vec<HashedValue>,
+        blobs: &[HashedValue],
     ) -> Result<ChainInfoResponse, LocalNodeError> {
         let mut node = self.node.lock().await;
         let mut notifications = Vec::new();
@@ -120,6 +116,35 @@ where
             .await?;
         node.notifier.handle_notifications(&notifications);
         Ok(response)
+    }
+
+    /// Fully handles a sequence of certificates.
+    pub async fn handle_certificates<Certificates>(
+        &mut self,
+        certificates: Certificates,
+        blobs: &[HashedValue],
+    ) -> Result<Option<ChainInfoResponse>, LocalNodeError>
+    where
+        Certificates: IntoIterator<Item = Certificate> + Send,
+        Certificates::IntoIter: Send,
+    {
+        let mut node = self.node.lock().await;
+        let response = node
+            .state
+            .handle_certificates(certificates, blobs, None)
+            .await?;
+        match response {
+            Some((response, actions)) => {
+                let secondary_notifications = node
+                    .state
+                    .handle_cross_chain_requests(actions.cross_chain_requests)
+                    .await?;
+                node.notifier.handle_notifications(&actions.notifications);
+                node.notifier.handle_notifications(&secondary_notifications);
+                Ok(Some(response))
+            }
+            None => Ok(None),
+        }
     }
 
     pub async fn handle_chain_info_query(
@@ -186,50 +211,62 @@ where
     where
         A: LocalValidatorNode + Clone + 'static,
     {
-        let mut info = None;
-        for certificate in certificates {
+        for certificate in &certificates {
             let hash = certificate.hash();
             if !certificate.value().is_confirmed() || certificate.value().chain_id() != chain_id {
                 // The certificate is not as expected. Give up.
                 tracing::warn!("Failed to process network certificate {}", hash);
-                return info;
+                return None;
             }
-            let mut result = self.handle_certificate(certificate.clone(), vec![]).await;
-            if let Err(LocalNodeError::WorkerError(WorkerError::ApplicationBytecodesNotFound(
-                locations,
-            ))) = &result
-            {
-                let chain_id = certificate.value().chain_id();
-                let mut blobs = Vec::new();
-                let maybe_blobs = future::join_all(locations.iter().map(|location| {
+        }
+        let mut result = self.handle_certificates(certificates.clone(), &[]).await;
+        if let Err(LocalNodeError::WorkerError(WorkerError::ApplicationBytecodesNotFound(
+            locations,
+        ))) = &result
+        {
+            let blobs = Self::load_missing_bytecodes(name, node, chain_id, locations).await;
+            result = self.handle_certificates(certificates, &blobs).await;
+        }
+        match result {
+            Ok(Some(response)) => Some(response.info),
+            Ok(None) => None,
+            Err(error) => {
+                // Some certificate is not as expected. Give up.
+                tracing::warn!("Failed to process network certificates: {error}");
+                None
+            }
+        }
+    }
+
+    /// Uses the provided `node` to fetch the certificates that contain the needed bytecodes.
+    async fn load_missing_bytecodes<A>(
+        name: ValidatorName,
+        node: &mut A,
+        chain_id: ChainId,
+        locations: &[BytecodeLocation],
+    ) -> Vec<HashedValue>
+    where
+        A: LocalValidatorNode + Clone + 'static,
+    {
+        let maybe_blobs =
+            future::join_all(
+                locations.iter().map(|location| {
                     let mut node = node.clone();
                     async move {
                         Self::try_download_blob_from(name, &mut node, chain_id, *location).await
                     }
-                }))
-                .await;
-                for maybe_blob in maybe_blobs {
-                    if let Some(blob) = maybe_blob {
-                        blobs.push(blob);
-                    } else {
-                        // The certificate is not as expected. Give up.
-                        tracing::warn!("Failed to process network blob");
-                        return info;
-                    }
+                }),
+            )
+            .await;
+        maybe_blobs
+            .into_iter()
+            .filter_map(|maybe_blob| {
+                if maybe_blob.is_none() {
+                    tracing::warn!("Failed to process network blob");
                 }
-                result = self.handle_certificate(certificate.clone(), blobs).await;
-            }
-            match result {
-                Ok(response) => info = Some(response.info),
-                Err(error) => {
-                    // The certificate is not as expected. Give up.
-                    tracing::warn!("Failed to process network certificate {}: {}", hash, error);
-                    return info;
-                }
-            };
-        }
-        // Done with all certificates.
-        info
+                maybe_blob
+            })
+            .collect()
     }
 
     pub(crate) async fn local_chain_info(
@@ -523,7 +560,7 @@ where
         if let Some(cert) = info.manager.requested_locked {
             if cert.value().is_validated() && cert.value().chain_id() == chain_id {
                 let hash = cert.hash();
-                if let Err(error) = self.handle_certificate(*cert, vec![]).await {
+                if let Err(error) = self.handle_certificate(*cert, &[]).await {
                     tracing::warn!("Skipping certificate {}: {}", hash, error);
                 }
             }
