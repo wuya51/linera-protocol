@@ -2357,7 +2357,7 @@ async fn test_end_to_end_reconfiguration(config: LocalNetConfig) -> Result<()> {
     client.query_validators(None).await?;
 
     // Restart the first shard for the 4th validator.
-    net.terminate_server(3, 0).await?;
+    net.kill_server(3, 0).await?;
     net.start_server(3, 0).await?;
 
     // Create configurations for two more validators

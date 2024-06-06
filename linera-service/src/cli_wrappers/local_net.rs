@@ -288,7 +288,7 @@ impl Validator {
         }
     }
 
-    async fn terminate(&mut self) -> Result<()> {
+    async fn kill(&mut self) -> Result<()> {
         self.proxy
             .kill()
             .await
@@ -307,7 +307,7 @@ impl Validator {
     }
 
     #[cfg(with_testing)]
-    async fn terminate_server(&mut self, index: usize) -> Result<()> {
+    async fn kill_server(&mut self, index: usize) -> Result<()> {
         let mut server = self.servers.remove(index);
         server
             .kill()
@@ -418,7 +418,7 @@ impl LineraNet for LocalNet {
 
     async fn terminate(&mut self) -> Result<()> {
         for validator in self.running_validators.values_mut() {
-            validator.terminate().await.context("in local network")?
+            validator.kill().await.context("in local network")?
         }
         Ok(())
     }
@@ -709,11 +709,11 @@ impl LocalNet {
         Ok(())
     }
 
-    pub async fn terminate_server(&mut self, validator: usize, shard: usize) -> Result<()> {
+    pub async fn kill_server(&mut self, validator: usize, shard: usize) -> Result<()> {
         self.running_validators
             .get_mut(&validator)
             .context("server not found")?
-            .terminate_server(shard)
+            .kill_server(shard)
             .await?;
         Ok(())
     }
