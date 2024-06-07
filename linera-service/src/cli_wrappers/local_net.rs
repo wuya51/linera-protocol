@@ -277,7 +277,7 @@ pub enum Database {
 /// The processes of a running validator.
 struct Validator {
     proxy: Child,
-    servers: Vec<Child>,
+    servers: Vec<Option<Child>>,
 }
 
 impl Validator {
@@ -293,7 +293,7 @@ impl Validator {
             .kill()
             .await
             .context("terminating validator proxy")?;
-        for server in &mut self.servers {
+        for mut server in self.servers.iter_mut().filter_map(Option::take) {
             server
                 .kill()
                 .await
@@ -303,12 +303,12 @@ impl Validator {
     }
 
     fn add_server(&mut self, server: Child) {
-        self.servers.push(server)
+        self.servers.push(Some(server))
     }
 
     fn ensure_is_running(&mut self) -> Result<()> {
         self.proxy.ensure_is_running()?;
-        for child in &mut self.servers {
+        for child in self.servers.iter_mut().filter_map(Option::as_mut) {
             child.ensure_is_running()?;
         }
         Ok(())
@@ -317,29 +317,38 @@ impl Validator {
 
 #[cfg(with_testing)]
 impl Validator {
-    async fn kill_server(&mut self, index: usize) -> Result<()> {
-        let mut server = self.servers.remove(index);
-        server
-            .kill()
-            .await
-            .context("terminating validator server")?;
+    async fn kill_server(&mut self, shard: usize) -> Result<()> {
+        if let Some(mut server) = self
+            .servers
+            .get_mut(shard)
+            .expect("Invalid shard index")
+            .take()
+        {
+            server
+                .kill()
+                .await
+                .context("terminating validator server")?;
+        }
         Ok(())
     }
 
     /// Sends a SIGTERM signal to the specified validator's shard server process.
     pub fn terminate_server(&mut self, shard: usize) -> Result<()> {
-        let server = self
+        let maybe_server = self
             .servers
             .get(shard)
             .ok_or_else(|| anyhow!("Shard server to terminate not found"))?;
-        let process_id = server
-            .id()
-            .ok_or_else(|| anyhow!("Missing process ID for shard server"))?;
 
-        nix::sys::signal::kill(
-            nix::unistd::Pid::from_raw(process_id as i32),
-            nix::sys::signal::Signal::SIGTERM,
-        )?;
+        if let Some(server) = maybe_server {
+            let process_id = server
+                .id()
+                .ok_or_else(|| anyhow!("Missing process ID for shard server"))?;
+
+            nix::sys::signal::kill(
+                nix::unistd::Pid::from_raw(process_id as i32),
+                nix::sys::signal::Signal::SIGTERM,
+            )?;
+        }
 
         Ok(())
     }
