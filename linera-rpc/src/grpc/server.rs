@@ -562,6 +562,7 @@ where
             Ok((info, actions)) => {
                 Self::log_request_success_and_latency(start, "handle_chain_info_query");
                 self.handle_network_actions(actions);
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
                 Ok(Response::new(info.try_into()?))
             }
             Err(error) => {
