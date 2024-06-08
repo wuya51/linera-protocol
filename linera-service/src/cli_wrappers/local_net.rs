@@ -276,23 +276,22 @@ pub enum Database {
 
 /// The processes of a running validator.
 struct Validator {
-    proxy: Child,
+    proxy: Option<Child>,
     servers: Vec<Option<Child>>,
 }
 
 impl Validator {
     fn new(proxy: Child) -> Self {
         Self {
-            proxy,
+            proxy: Some(proxy),
             servers: vec![],
         }
     }
 
     async fn kill(&mut self) -> Result<()> {
-        self.proxy
-            .kill()
-            .await
-            .context("terminating validator proxy")?;
+        if let Some(mut proxy) = self.proxy.take() {
+            proxy.kill().await.context("terminating validator proxy")?;
+        }
         for mut server in self.servers.iter_mut().filter_map(Option::take) {
             server
                 .kill()
@@ -348,7 +347,10 @@ impl Validator {
     }
 
     fn ensure_is_running(&mut self) -> Result<()> {
-        self.proxy.ensure_is_running()?;
+        let Some(proxy) = self.proxy.as_mut() else {
+            bail!("Proxy is not running");
+        };
+        proxy.ensure_is_running()?;
         for child in self.servers.iter_mut().filter_map(Option::as_mut) {
             child.ensure_is_running()?;
         }
@@ -398,6 +400,8 @@ impl Validator {
     pub fn terminate_proxy(&mut self) -> Result<()> {
         let process_id = self
             .proxy
+            .as_mut()
+            .ok_or_else(|| anyhow!("Proxy is not running"))?
             .id()
             .ok_or_else(|| anyhow!("Missing process ID for proxy"))?;
 
