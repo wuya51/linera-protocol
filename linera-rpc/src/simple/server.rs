@@ -287,7 +287,10 @@ where
                 Ok(None)
             }
 
-            RpcMessage::VersionInfoQuery => Ok(Some(linera_version::VersionInfo::default().into())),
+            RpcMessage::VersionInfoQuery => {
+                tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                Ok(Some(linera_version::VersionInfo::default().into()))
+            }
 
             RpcMessage::Vote(_)
             | RpcMessage::Error(_)
