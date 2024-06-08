@@ -308,15 +308,18 @@ impl Validator {
                 .extend(iter::repeat_with(|| None).take(shard - self.servers.len() + 1));
         }
 
+        let previous_is_running = !self.reap_server(shard)?;
         let slot = self
             .servers
             .get_mut(shard)
             .expect("List of servers should be extended above");
-        if let Some(mut previous_server) = slot.take() {
-            previous_server
-                .kill()
-                .await
-                .context("killing existing validator server")?;
+        if previous_is_running {
+            if let Some(mut previous_server) = slot.take() {
+                previous_server
+                    .kill()
+                    .await
+                    .context("killing existing validator server")?;
+            }
         }
         *slot = Some(server);
 
