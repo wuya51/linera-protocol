@@ -390,6 +390,21 @@ impl Validator {
 
         Ok(())
     }
+
+    /// Sends a SIGTERM signal to the validator's proxy process.
+    pub fn terminate_proxy(&mut self) -> Result<()> {
+        let process_id = self
+            .proxy
+            .id()
+            .ok_or_else(|| anyhow!("Missing process ID for proxy"))?;
+
+        nix::sys::signal::kill(
+            nix::unistd::Pid::from_raw(process_id as i32),
+            nix::sys::signal::Signal::SIGTERM,
+        )?;
+
+        Ok(())
+    }
 }
 
 #[cfg(with_testing)]
@@ -782,6 +797,14 @@ impl LocalNet {
             .get_mut(&validator)
             .context("server not found")?
             .terminate_server(shard)
+    }
+
+    /// Sends a SIGTERM signal to the specified validator's proxy process.
+    pub fn terminate_proxy(&mut self, validator: usize) -> Result<()> {
+        self.running_validators
+            .get_mut(&validator)
+            .context("server not found")?
+            .terminate_proxy()
     }
 
     /// Stops tracking the shard server handle, if the server has already stopped.
