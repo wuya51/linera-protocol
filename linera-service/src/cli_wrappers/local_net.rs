@@ -3,7 +3,7 @@
 
 use std::{
     collections::{BTreeMap, HashSet},
-    env,
+    env, iter,
     path::{Path, PathBuf},
     sync::Arc,
     time::Duration,
@@ -302,8 +302,25 @@ impl Validator {
         Ok(())
     }
 
-    fn add_server(&mut self, server: Child) {
-        self.servers.push(Some(server))
+    async fn add_server(&mut self, server: Child, shard: usize) -> Result<()> {
+        if shard >= self.servers.len() {
+            self.servers
+                .extend(iter::repeat_with(|| None).take(shard - self.servers.len() + 1));
+        }
+
+        let slot = self
+            .servers
+            .get_mut(shard)
+            .expect("List of servers should be extended above");
+        if let Some(mut previous_server) = slot.take() {
+            previous_server
+                .kill()
+                .await
+                .context("killing existing validator server")?;
+        }
+        *slot = Some(server);
+
+        Ok(())
     }
 
     fn ensure_is_running(&mut self) -> Result<()> {
@@ -711,7 +728,7 @@ impl LocalNet {
         let mut validator_proxy = Validator::new(proxy);
         for shard in 0..self.num_shards {
             let server = self.run_server(validator, shard).await?;
-            validator_proxy.add_server(server);
+            validator_proxy.add_server(server, shard).await?;
         }
         self.running_validators.insert(validator, validator_proxy);
         Ok(())
@@ -767,7 +784,8 @@ impl LocalNet {
         self.running_validators
             .get_mut(&validator)
             .context("could not find server")?
-            .add_server(server);
+            .add_server(server, shard)
+            .await?;
         Ok(())
     }
 }
