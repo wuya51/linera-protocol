@@ -323,6 +323,27 @@ impl Validator {
         Ok(())
     }
 
+    /// Removes the shard server handle from this [`Validator`] tracker, if the server has already
+    /// stopped.
+    ///
+    /// Returns [`true`] if the server had already stopped, or [`false`] if the server is still
+    /// running. Note that this may return [`true`] if the stopped server was successfully reaped
+    /// or if the server had already been reaped previously.
+    pub fn reap_server(&mut self, shard: usize) -> Result<bool> {
+        let server_slot = self.servers.get_mut(shard).expect("Invalid server index");
+        let Some(server) = server_slot.as_mut() else {
+            return Ok(true);
+        };
+
+        match server.try_wait()? {
+            Some(_exit_status) => {
+                server_slot.take();
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
+
     fn ensure_is_running(&mut self) -> Result<()> {
         self.proxy.ensure_is_running()?;
         for child in self.servers.iter_mut().filter_map(Option::as_mut) {
@@ -761,6 +782,17 @@ impl LocalNet {
             .get_mut(&validator)
             .context("server not found")?
             .terminate_server(shard)
+    }
+
+    /// Stops tracking the shard server handle, if the server has already stopped.
+    ///
+    /// Returns `true` if the server had already stopped and was successfully reaped, or `false` if
+    /// the server is still running.
+    pub fn reap_server(&mut self, validator: usize, shard: usize) -> Result<bool> {
+        self.running_validators
+            .get_mut(&validator)
+            .context("server not found")?
+            .reap_server(shard)
     }
 
     pub async fn kill_server(&mut self, validator: usize, shard: usize) -> Result<()> {
