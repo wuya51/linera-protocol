@@ -412,6 +412,27 @@ impl Validator {
 
         Ok(())
     }
+
+    /// Removes the proxy handle from this [`Validator`] tracker, if the proxy process has already
+    /// stopped.
+    ///
+    /// Returns [`true`] if the proxy had already stopped, or [`false`] if the proxy is still
+    /// running. Note that this may return [`true`] if the stopped proxy was successfully reaped
+    /// or if the proxy had already been reaped previously.
+    pub fn reap_proxy(&mut self) -> Result<bool> {
+        let proxy_slot = &mut self.proxy;
+        let Some(proxy) = proxy_slot.as_mut() else {
+            return Ok(true);
+        };
+
+        match proxy.try_wait()? {
+            Some(_exit_status) => {
+                proxy_slot.take();
+                Ok(true)
+            }
+            None => Ok(false),
+        }
+    }
 }
 
 #[cfg(with_testing)]
@@ -823,6 +844,17 @@ impl LocalNet {
             .get_mut(&validator)
             .context("server not found")?
             .reap_server(shard)
+    }
+
+    /// Stops tracking a validator's proxy process, if the proxy has already stopped.
+    ///
+    /// Returns `true` if the proxy had already stopped and was successfully reaped, or `false` if
+    /// the proxy is still running.
+    pub fn reap_proxy(&mut self, validator: usize) -> Result<bool> {
+        self.running_validators
+            .get_mut(&validator)
+            .context("server not found")?
+            .reap_proxy()
     }
 
     pub async fn kill_server(&mut self, validator: usize, shard: usize) -> Result<()> {
