@@ -270,7 +270,11 @@ impl From<linera_chain::ChainError> for WorkerError {
 
 /// State of a worker in a validator or a local node.
 #[derive(Clone)]
-pub struct WorkerState<StorageClient> {
+pub struct WorkerState<StorageClient>
+where
+    StorageClient: Storage,
+    ViewError: From<StorageClient::ContextError>,
+{
     /// A name used for logging
     nickname: String,
     /// Access to local persistent storage.
@@ -291,7 +295,11 @@ pub struct WorkerState<StorageClient> {
 pub(crate) type DeliveryNotifiers =
     HashMap<ChainId, BTreeMap<BlockHeight, Vec<oneshot::Sender<()>>>>;
 
-impl<StorageClient> WorkerState<StorageClient> {
+impl<StorageClient> WorkerState<StorageClient>
+where
+    StorageClient: Storage,
+    ViewError: From<StorageClient::ContextError>,
+{
     pub fn new(nickname: String, key_pair: Option<KeyPair>, storage: StorageClient) -> Self {
         WorkerState {
             nickname,
@@ -740,7 +748,11 @@ where
 }
 
 #[cfg(with_testing)]
-impl<StorageClient> WorkerState<StorageClient> {
+impl<StorageClient> WorkerState<StorageClient>
+where
+    StorageClient: Storage,
+    ViewError: From<StorageClient::ContextError>,
+{
     /// Gets a reference to the validator's [`PublicKey`].
     ///
     /// # Panics
