@@ -216,9 +216,9 @@ where
                     let _ = callback.send(self.worker.chain_state_view().await);
                 }
                 ChainWorkerRequest::QueryApplication { query, callback } => {
-                    let (execution_state_sender, execution_state_receiver) =
+                    let (execution_state_sender, mut execution_state_receiver) =
                         futures::channel::mpsc::unbounded();
-                    let (request_sender, request_receiver) = std::sync::mpsc::channel();
+                    let (mut request_sender, request_receiver) = std::sync::mpsc::channel();
                     let context = self.worker.current_query_context();
 
                     let runtime_thread = tokio::task::spawn_blocking(move || {
@@ -228,7 +228,11 @@ where
 
                     let response = self
                         .worker
-                        .query_application(query, execution_state_receiver, request_sender)
+                        .query_application(
+                            query,
+                            &mut execution_state_receiver,
+                            &mut request_sender,
+                        )
                         .await;
 
                     runtime_thread

@@ -150,8 +150,10 @@ where
     pub(super) async fn query_application(
         &mut self,
         query: Query,
-        incoming_execution_requests: futures::channel::mpsc::UnboundedReceiver<ExecutionRequest>,
-        runtime_request_sender: std::sync::mpsc::Sender<ServiceRuntimeRequest>,
+        incoming_execution_requests: &mut futures::channel::mpsc::UnboundedReceiver<
+            ExecutionRequest,
+        >,
+        runtime_request_sender: &mut std::sync::mpsc::Sender<ServiceRuntimeRequest>,
     ) -> Result<Response, WorkerError> {
         ChainWorkerStateWithTemporaryChanges(self)
             .query_application(query, incoming_execution_requests, runtime_request_sender)
@@ -546,8 +548,10 @@ where
     pub(super) async fn query_application(
         &mut self,
         query: Query,
-        incoming_execution_requests: futures::channel::mpsc::UnboundedReceiver<ExecutionRequest>,
-        runtime_request_sender: std::sync::mpsc::Sender<ServiceRuntimeRequest>,
+        incoming_execution_requests: &mut futures::channel::mpsc::UnboundedReceiver<
+            ExecutionRequest,
+        >,
+        runtime_request_sender: &mut std::sync::mpsc::Sender<ServiceRuntimeRequest>,
     ) -> Result<Response, WorkerError> {
         self.0.ensure_is_active()?;
         let local_time = self.0.storage.clock().current_time();
