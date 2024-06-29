@@ -1350,6 +1350,19 @@ impl ServiceSyncRuntime {
     pub fn run(&mut self, incoming_requests: std::sync::mpsc::Receiver<ServiceRuntimeRequest>) {
         while let Ok(request) = incoming_requests.recv() {
             match request {
+                ServiceRuntimeRequest::ChangeContext { context } => {
+                    let execution_state_sender = self
+                        .0
+                        .as_mut()
+                        .expect(
+                            "`SyncRuntimeHandle` should be available \
+                            while `SyncRuntime` hasn't been dropped",
+                        )
+                        .inner()
+                        .execution_state_sender
+                        .clone();
+                    *self = ServiceSyncRuntime::new(execution_state_sender, context);
+                }
                 ServiceRuntimeRequest::Query {
                     application_id,
                     query,
@@ -1410,6 +1423,10 @@ impl ServiceRuntime for ServiceSyncRuntimeHandle {
 
 /// A request to the service runtime actor.
 pub enum ServiceRuntimeRequest {
+    ChangeContext {
+        context: QueryContext,
+    },
+
     Query {
         application_id: UserApplicationId,
         query: Vec<u8>,
