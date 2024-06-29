@@ -17,3 +17,4 @@ pub mod service;
 pub mod rocks_db;
 #[cfg(feature = "scylladb")]
 pub mod scylla_db;
+pub mod storage_service;

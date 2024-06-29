@@ -13,7 +13,7 @@ version.workspace = true
 
 [features]
 ethereum = []
-default = ["wasmer", "rocksdb"]
+default = ["wasmer"]
 test = ["linera-views/test", "linera-execution/test", "dep:stdext"]
 benchmark = ["linera-base/test", "dep:linera-sdk"]
 wasmer = ["linera-execution/wasmer", "linera-storage/wasmer"]
@@ -62,7 +62,7 @@ k8s-openapi = { workspace = true, optional = true }
 kube = { workspace = true, optional = true }
 linera-base = { workspace = true, features = ["metrics"] }
 linera-chain = { workspace = true, features = ["metrics"] }
-linera-core = { workspace = true, features = ["metrics", "rocksdb", "wasmer"] }
+linera-core = { workspace = true, features = ["metrics", "wasmer"] }
 linera-execution = { workspace = true, features = ["fs", "metrics", "wasmer"] }
 linera-rpc = { workspace = true, features = ["server", "simple-network"] }
 linera-sdk = { workspace = true, optional = true }

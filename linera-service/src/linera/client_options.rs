@@ -148,19 +148,15 @@ impl ClientOptions {
     pub fn storage_config(&self) -> Result<StorageConfigNamespace, anyhow::Error> {
         match &self.storage_config {
             Some(config) => config.parse(),
-            #[cfg(feature = "rocksdb")]
             None => {
-                let storage_config = linera_service::storage::StorageConfig::RocksDb {
-                    path: self.config_path()?.join("wallet.db"),
-                };
+                let endpoint = std::env::var("LINERA_STORAGE_SERVICE")?;
+                let storage_config = linera_service::storage::StorageConfig::Service { endpoint };
                 let namespace = "default".to_string();
                 Ok(StorageConfigNamespace {
                     storage_config,
                     namespace,
                 })
             }
-            #[cfg(not(feature = "rocksdb"))]
-            None => anyhow::bail!("A storage option must be provided"),
         }
     }
 
