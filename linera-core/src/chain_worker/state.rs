@@ -549,7 +549,7 @@ where
         query: Query,
     ) -> Result<Response, WorkerError> {
         self.0.ensure_is_active()?;
-        let (runtime_thread, execution_state_receiver, runtime_request_sender) =
+        let (runtime_thread, mut execution_state_receiver, mut runtime_request_sender) =
             self.prepare_to_query_application();
         let local_time = self.0.storage.clock().current_time();
         let response = self
@@ -558,8 +558,8 @@ where
             .query_application(
                 local_time,
                 query,
-                execution_state_receiver,
-                runtime_request_sender,
+                &mut execution_state_receiver,
+                &mut runtime_request_sender,
             )
             .await?;
         runtime_thread
