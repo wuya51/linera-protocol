@@ -1363,6 +1363,16 @@ impl ServiceSyncRuntime {
                         .clone();
                     *self = ServiceSyncRuntime::new(execution_state_sender, context);
                 }
+                ServiceRuntimeRequest::UpdateLocalTime { local_time } => {
+                    self.0
+                        .as_mut()
+                        .expect(
+                            "`SyncRuntimeHandle` should be available \
+                            while `SyncRuntime` hasn't been dropped",
+                        )
+                        .inner()
+                        .local_time = local_time;
+                }
                 ServiceRuntimeRequest::Query {
                     application_id,
                     query,
@@ -1425,6 +1435,10 @@ impl ServiceRuntime for ServiceSyncRuntimeHandle {
 pub enum ServiceRuntimeRequest {
     ChangeContext {
         context: QueryContext,
+    },
+
+    UpdateLocalTime {
+        local_time: Timestamp,
     },
 
     Query {
