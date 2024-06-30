@@ -18,13 +18,14 @@ use linera_chain::{
     ChainStateView,
 };
 use linera_execution::{
-    Query, Response, ServiceSyncRuntime, UserApplicationDescription, UserApplicationId,
+    ExecutionRequest, Query, QueryContext, Response, ServiceRuntimeRequest, ServiceSyncRuntime,
+    UserApplicationDescription, UserApplicationId,
 };
 use linera_storage::Storage;
 use linera_views::views::ViewError;
 use tokio::{
     sync::{mpsc, oneshot, OwnedRwLockReadGuard},
-    task::JoinSet,
+    task::{JoinHandle, JoinSet},
 };
 use tracing::{instrument, trace};
 #[cfg(with_testing)]
@@ -149,6 +150,9 @@ where
 {
     worker: ChainWorkerState<StorageClient>,
     incoming_requests: mpsc::UnboundedReceiver<ChainWorkerRequest<StorageClient::Context>>,
+    service_runtime_thread: JoinHandle<()>,
+    execution_state_receiver: futures::channel::mpsc::UnboundedReceiver<ExecutionRequest>,
+    runtime_request_sender: std::sync::mpsc::Sender<ServiceRuntimeRequest>,
 }
 
 impl<StorageClient> ChainWorkerActor<StorageClient>
@@ -177,14 +181,45 @@ where
         .await?;
         let (sender, receiver) = mpsc::unbounded_channel();
 
+        let (service_runtime_thread, execution_state_receiver, runtime_request_sender) =
+            Self::spawn_service_runtime_actor(worker.current_query_context());
+
         let actor = ChainWorkerActor {
             worker,
             incoming_requests: receiver,
+            service_runtime_thread,
+            execution_state_receiver,
+            runtime_request_sender,
         };
 
         join_set.spawn_task(actor.run());
 
         Ok(sender)
+    }
+
+    /// Spawns a blocking task to execute the service runtime actor.
+    ///
+    /// Returns the task handle and the endpoints to interact with the actor.
+    fn spawn_service_runtime_actor(
+        context: QueryContext,
+    ) -> (
+        JoinHandle<()>,
+        futures::channel::mpsc::UnboundedReceiver<ExecutionRequest>,
+        std::sync::mpsc::Sender<ServiceRuntimeRequest>,
+    ) {
+        let (execution_state_sender, execution_state_receiver) =
+            futures::channel::mpsc::unbounded();
+        let (runtime_request_sender, runtime_request_receiver) = std::sync::mpsc::channel();
+
+        let service_runtime_thread = tokio::task::spawn_blocking(move || {
+            ServiceSyncRuntime::new(execution_state_sender, context).run(runtime_request_receiver)
+        });
+
+        (
+            service_runtime_thread,
+            execution_state_receiver,
+            runtime_request_sender,
+        )
     }
 
     /// Runs the worker until there are no more incoming requests.
@@ -216,28 +251,24 @@ where
                     let _ = callback.send(self.worker.chain_state_view().await);
                 }
                 ChainWorkerRequest::QueryApplication { query, callback } => {
-                    let (execution_state_sender, mut execution_state_receiver) =
-                        futures::channel::mpsc::unbounded();
-                    let (mut request_sender, request_receiver) = std::sync::mpsc::channel();
-                    let context = self.worker.current_query_context();
-
-                    let runtime_thread = tokio::task::spawn_blocking(move || {
-                        ServiceSyncRuntime::new(execution_state_sender, context)
-                            .run(request_receiver)
-                    });
+                    self.runtime_request_sender
+                        .send(ServiceRuntimeRequest::ChangeContext {
+                            context: self.worker.current_query_context(),
+                        })
+                        .expect(
+                            "Service runtime actor should be running \
+                            while `ChainWorkerActor` is running",
+                        );
 
                     let response = self
                         .worker
                         .query_application(
                             query,
-                            &mut execution_state_receiver,
-                            &mut request_sender,
+                            &mut self.execution_state_receiver,
+                            &mut self.runtime_request_sender,
                         )
                         .await;
 
-                    runtime_thread
-                        .await
-                        .expect("Service runtime thread should not panic");
                     let _ = callback.send(response);
                 }
                 #[cfg(with_testing)]
@@ -310,6 +341,11 @@ where
                 }
             }
         }
+
+        drop(self.runtime_request_sender);
+        self.service_runtime_thread
+            .await
+            .expect("Service runtime thread should not panic");
 
         trace!("`ChainWorkerActor` finished");
     }
