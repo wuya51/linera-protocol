@@ -153,6 +153,7 @@ where
     service_runtime_thread: JoinHandle<()>,
     execution_state_receiver: futures::channel::mpsc::UnboundedReceiver<ExecutionRequest>,
     runtime_request_sender: std::sync::mpsc::Sender<ServiceRuntimeRequest>,
+    current_query_context: Option<QueryContext>,
 }
 
 impl<StorageClient> ChainWorkerActor<StorageClient>
@@ -181,8 +182,9 @@ where
         .await?;
         let (sender, receiver) = mpsc::unbounded_channel();
 
+        let current_query_context = worker.current_query_context();
         let (service_runtime_thread, execution_state_receiver, runtime_request_sender) =
-            Self::spawn_service_runtime_actor(worker.current_query_context());
+            Self::spawn_service_runtime_actor(current_query_context);
 
         let actor = ChainWorkerActor {
             worker,
@@ -190,6 +192,7 @@ where
             service_runtime_thread,
             execution_state_receiver,
             runtime_request_sender,
+            current_query_context: Some(current_query_context),
         };
 
         join_set.spawn_task(actor.run());
@@ -228,6 +231,8 @@ where
         trace!("Starting `ChainWorkerActor`");
 
         while let Some(request) = self.incoming_requests.recv().await {
+            self.maybe_clear_query_context(&request);
+
             match request {
                 #[cfg(with_testing)]
                 ChainWorkerRequest::ReadCertificate { height, callback } => {
@@ -251,14 +256,7 @@ where
                     let _ = callback.send(self.worker.chain_state_view().await);
                 }
                 ChainWorkerRequest::QueryApplication { query, callback } => {
-                    self.runtime_request_sender
-                        .send(ServiceRuntimeRequest::ChangeContext {
-                            context: self.worker.current_query_context(),
-                        })
-                        .expect(
-                            "Service runtime actor should be running \
-                            while `ChainWorkerActor` is running",
-                        );
+                    self.prepare_to_query_application();
 
                     let response = self
                         .worker
@@ -348,5 +346,57 @@ where
             .expect("Service runtime thread should not panic");
 
         trace!("`ChainWorkerActor` finished");
+    }
+
+    /// Clear the current [`QueryContext`] if any changes might be made, which will force a restart
+    /// of the service runtime actor the next time before a query is handled.
+    fn maybe_clear_query_context(&mut self, request: &ChainWorkerRequest<StorageClient::Context>) {
+        match request {
+            #[cfg(with_testing)]
+            ChainWorkerRequest::ReadCertificate { .. }
+            | ChainWorkerRequest::FindEventInInbox { .. }
+            | ChainWorkerRequest::ReadBytecodeLocation { .. } => (),
+            ChainWorkerRequest::GetChainStateView { .. }
+            | ChainWorkerRequest::QueryApplication { .. }
+            | ChainWorkerRequest::DescribeApplication { .. }
+            | ChainWorkerRequest::StageBlockExecution { .. }
+            | ChainWorkerRequest::HandleChainInfoQuery { .. } => (),
+            ChainWorkerRequest::ProcessTimeout { .. }
+            | ChainWorkerRequest::HandleBlockProposal { .. }
+            | ChainWorkerRequest::ProcessValidatedBlock { .. }
+            | ChainWorkerRequest::ProcessConfirmedBlock { .. }
+            | ChainWorkerRequest::ProcessCrossChainUpdate { .. }
+            | ChainWorkerRequest::ConfirmUpdatedRecipient { .. } => {
+                self.current_query_context = None;
+            }
+        }
+    }
+
+    /// Configure the [`QueryContext`] before executing a service to handle a query.
+    ///
+    /// Restarts the service runtime actor if needed, otherwise just updates the local time of the
+    /// context.
+    fn prepare_to_query_application(&mut self) {
+        let new_context = self.worker.current_query_context();
+
+        let mut expected_context = new_context;
+        if let Some(old_context) = self.current_query_context {
+            expected_context.local_time = old_context.local_time;
+        }
+
+        let request = if self.current_query_context != Some(expected_context) {
+            ServiceRuntimeRequest::ChangeContext {
+                context: new_context,
+            }
+        } else {
+            ServiceRuntimeRequest::UpdateLocalTime {
+                local_time: new_context.local_time,
+            }
+        };
+
+        self.runtime_request_sender
+            .send(request)
+            .expect("Service runtime actor should be running while `ChainWorkerActor` is running");
+        self.current_query_context = Some(new_context);
     }
 }
