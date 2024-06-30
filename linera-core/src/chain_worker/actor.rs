@@ -7,7 +7,7 @@ use std::sync::Arc;
 
 use linera_base::{
     crypto::CryptoHash,
-    data_types::{BlockHeight, HashedBlob},
+    data_types::{BlockHeight, HashedBlob, Timestamp},
     identifiers::{BlobId, ChainId},
 };
 use linera_chain::{
@@ -17,12 +17,15 @@ use linera_chain::{
     },
     ChainStateView,
 };
-use linera_execution::{Query, Response, UserApplicationDescription, UserApplicationId};
+use linera_execution::{
+    ExecutionRequest, Query, QueryContext, Response, ServiceRuntimeRequest, ServiceSyncRuntime,
+    UserApplicationDescription, UserApplicationId,
+};
 use linera_storage::Storage;
 use linera_views::views::ViewError;
 use tokio::{
     sync::{mpsc, oneshot, OwnedRwLockReadGuard},
-    task::JoinSet,
+    task::{JoinHandle, JoinSet},
 };
 use tracing::{instrument, trace};
 #[cfg(with_testing)]
@@ -147,6 +150,7 @@ where
 {
     worker: ChainWorkerState<StorageClient>,
     incoming_requests: mpsc::UnboundedReceiver<ChainWorkerRequest<StorageClient::Context>>,
+    service_runtime_thread: JoinHandle<()>,
 }
 
 impl<StorageClient> ChainWorkerActor<StorageClient>
@@ -165,24 +169,61 @@ where
         join_set: &mut JoinSet<()>,
     ) -> Result<mpsc::UnboundedSender<ChainWorkerRequest<StorageClient::Context>>, WorkerError>
     {
+        let (service_runtime_thread, execution_state_receiver, runtime_request_sender) =
+            Self::spawn_service_runtime_actor(chain_id);
+
         let worker = ChainWorkerState::load(
             config,
             storage,
             certificate_value_cache,
             blob_cache,
             chain_id,
+            execution_state_receiver,
+            runtime_request_sender,
         )
         .await?;
-        let (sender, receiver) = mpsc::unbounded_channel();
 
+        let (sender, receiver) = mpsc::unbounded_channel();
         let actor = ChainWorkerActor {
             worker,
             incoming_requests: receiver,
+            service_runtime_thread,
         };
 
         join_set.spawn_task(actor.run());
 
         Ok(sender)
+    }
+
+    /// Spawns a blocking task to execute the service runtime actor.
+    ///
+    /// Returns the task handle and the endpoints to interact with the actor.
+    fn spawn_service_runtime_actor(
+        chain_id: ChainId,
+    ) -> (
+        JoinHandle<()>,
+        futures::channel::mpsc::UnboundedReceiver<ExecutionRequest>,
+        std::sync::mpsc::Sender<ServiceRuntimeRequest>,
+    ) {
+        let context = QueryContext {
+            chain_id,
+            next_block_height: BlockHeight(0),
+            local_time: Timestamp::from(0),
+        };
+
+        let (execution_state_sender, execution_state_receiver) =
+            futures::channel::mpsc::unbounded();
+        let (runtime_request_sender, runtime_request_receiver) = std::sync::mpsc::channel();
+
+        let service_runtime_thread = tokio::task::spawn_blocking(move || {
+            ServiceSyncRuntime::new(execution_state_sender, context).run(runtime_request_receiver)
+        });
+
+        (
+            service_runtime_thread,
+            execution_state_receiver,
+            runtime_request_sender,
+        )
     }
 
     /// Runs the worker until there are no more incoming requests.
@@ -286,6 +327,11 @@ where
                 }
             }
         }
+
+        drop(self.worker);
+        self.service_runtime_thread
+            .await
+            .expect("Service runtime thread should not panic");
 
         trace!("`ChainWorkerActor` finished");
     }

@@ -27,17 +27,14 @@ use linera_chain::{
 use linera_execution::{
     committee::{Committee, Epoch},
     BytecodeLocation, ExecutionRequest, Query, QueryContext, Response, ServiceRuntimeRequest,
-    ServiceSyncRuntime, UserApplicationDescription, UserApplicationId,
+    UserApplicationDescription, UserApplicationId,
 };
 use linera_storage::Storage;
 use linera_views::{
     common::Context,
     views::{ClonableView, RootView, View, ViewError},
 };
-use tokio::{
-    sync::{OwnedRwLockReadGuard, RwLock},
-    task::JoinHandle,
-};
+use tokio::sync::{OwnedRwLockReadGuard, RwLock};
 use tracing::{debug, warn};
 #[cfg(with_testing)]
 use {linera_base::identifiers::BytecodeId, linera_chain::data_types::Event};
@@ -59,6 +56,8 @@ where
     storage: StorageClient,
     chain: ChainStateView<StorageClient::Context>,
     shared_chain_view: Option<Arc<RwLock<ChainStateView<StorageClient::Context>>>>,
+    execution_state_receiver: futures::channel::mpsc::UnboundedReceiver<ExecutionRequest>,
+    runtime_request_sender: std::sync::mpsc::Sender<ServiceRuntimeRequest>,
     recent_hashed_certificate_values: Arc<ValueCache<CryptoHash, HashedCertificateValue>>,
     recent_hashed_blobs: Arc<ValueCache<BlobId, HashedBlob>>,
     knows_chain_is_active: bool,
@@ -76,6 +75,8 @@ where
         certificate_value_cache: Arc<ValueCache<CryptoHash, HashedCertificateValue>>,
         blob_cache: Arc<ValueCache<BlobId, HashedBlob>>,
         chain_id: ChainId,
+        execution_state_receiver: futures::channel::mpsc::UnboundedReceiver<ExecutionRequest>,
+        runtime_request_sender: std::sync::mpsc::Sender<ServiceRuntimeRequest>,
     ) -> Result<Self, WorkerError> {
         let chain = storage.load_chain(chain_id).await?;
 
@@ -84,6 +85,8 @@ where
             storage,
             chain,
             shared_chain_view: None,
+            execution_state_receiver,
+            runtime_request_sender,
             recent_hashed_certificate_values: certificate_value_cache,
             recent_hashed_blobs: blob_cache,
             knows_chain_is_active: false,
@@ -549,8 +552,7 @@ where
         query: Query,
     ) -> Result<Response, WorkerError> {
         self.0.ensure_is_active()?;
-        let (runtime_thread, mut execution_state_receiver, mut runtime_request_sender) =
-            self.prepare_to_query_application();
+        self.prepare_to_query_application();
         let local_time = self.0.storage.clock().current_time();
         let response = self
             .0
@@ -558,36 +560,25 @@ where
             .query_application(
                 local_time,
                 query,
-                &mut execution_state_receiver,
-                &mut runtime_request_sender,
+                &mut self.0.execution_state_receiver,
+                &mut self.0.runtime_request_sender,
             )
             .await?;
-        runtime_thread
-            .await
-            .expect("Service runtime thread should not panic");
         Ok(response)
     }
 
     /// Configure the [`QueryContext`] before executing a service to handle a query.
     ///
-    /// Spawns the service runtime actor thread, and returns the endpoints to communicate with it.
-    fn prepare_to_query_application(
-        &mut self,
-    ) -> (
-        JoinHandle<()>,
-        futures::channel::mpsc::UnboundedReceiver<ExecutionRequest>,
-        std::sync::mpsc::Sender<ServiceRuntimeRequest>,
-    ) {
-        let (execution_state_sender, execution_state_receiver) =
-            futures::channel::mpsc::unbounded();
-        let (request_sender, request_receiver) = std::sync::mpsc::channel();
-        let context = self.0.current_query_context();
+    /// Restarts the service runtime actor before every query.
+    fn prepare_to_query_application(&mut self) {
+        let request = ServiceRuntimeRequest::ChangeContext {
+            context: self.0.current_query_context(),
+        };
 
-        let runtime_thread = tokio::task::spawn_blocking(move || {
-            ServiceSyncRuntime::new(execution_state_sender, context).run(request_receiver)
-        });
-
-        (runtime_thread, execution_state_receiver, request_sender)
+        self.0
+            .runtime_request_sender
+            .send(request)
+            .expect("Service runtime actor should be running while `ChainWorkerActor` is running");
     }
 
     /// Returns the [`BytecodeLocation`] for the requested [`BytecodeId`], if it is known by the
