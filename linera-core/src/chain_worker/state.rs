@@ -27,14 +27,17 @@ use linera_chain::{
 use linera_execution::{
     committee::{Committee, Epoch},
     BytecodeLocation, ExecutionRequest, Query, QueryContext, Response, ServiceRuntimeRequest,
-    UserApplicationDescription, UserApplicationId,
+    ServiceSyncRuntime, UserApplicationDescription, UserApplicationId,
 };
 use linera_storage::Storage;
 use linera_views::{
     common::Context,
     views::{ClonableView, RootView, View, ViewError},
 };
-use tokio::sync::{OwnedRwLockReadGuard, RwLock};
+use tokio::{
+    sync::{OwnedRwLockReadGuard, RwLock},
+    task::JoinHandle,
+};
 use tracing::{debug, warn};
 #[cfg(with_testing)]
 use {linera_base::identifiers::BytecodeId, linera_chain::data_types::Event};
@@ -150,11 +153,9 @@ where
     pub(super) async fn query_application(
         &mut self,
         query: Query,
-        incoming_execution_requests: futures::channel::mpsc::UnboundedReceiver<ExecutionRequest>,
-        runtime_request_sender: std::sync::mpsc::Sender<ServiceRuntimeRequest>,
     ) -> Result<Response, WorkerError> {
         ChainWorkerStateWithTemporaryChanges(self)
-            .query_application(query, incoming_execution_requests, runtime_request_sender)
+            .query_application(query)
             .await
     }
 
@@ -546,10 +547,10 @@ where
     pub(super) async fn query_application(
         &mut self,
         query: Query,
-        incoming_execution_requests: futures::channel::mpsc::UnboundedReceiver<ExecutionRequest>,
-        runtime_request_sender: std::sync::mpsc::Sender<ServiceRuntimeRequest>,
     ) -> Result<Response, WorkerError> {
         self.0.ensure_is_active()?;
+        let (runtime_thread, execution_state_receiver, runtime_request_sender) =
+            self.prepare_to_query_application();
         let local_time = self.0.storage.clock().current_time();
         let response = self
             .0
@@ -557,11 +558,36 @@ where
             .query_application(
                 local_time,
                 query,
-                incoming_execution_requests,
+                execution_state_receiver,
                 runtime_request_sender,
             )
             .await?;
+        runtime_thread
+            .await
+            .expect("Service runtime thread should not panic");
         Ok(response)
+    }
+
+    /// Configure the [`QueryContext`] before executing a service to handle a query.
+    ///
+    /// Spawns the service runtime actor thread, and returns the endpoints to communicate with it.
+    fn prepare_to_query_application(
+        &mut self,
+    ) -> (
+        JoinHandle<()>,
+        futures::channel::mpsc::UnboundedReceiver<ExecutionRequest>,
+        std::sync::mpsc::Sender<ServiceRuntimeRequest>,
+    ) {
+        let (execution_state_sender, execution_state_receiver) =
+            futures::channel::mpsc::unbounded();
+        let (request_sender, request_receiver) = std::sync::mpsc::channel();
+        let context = self.0.current_query_context();
+
+        let runtime_thread = tokio::task::spawn_blocking(move || {
+            ServiceSyncRuntime::new(execution_state_sender, context).run(request_receiver)
+        });
+
+        (runtime_thread, execution_state_receiver, request_sender)
     }
 
     /// Returns the [`BytecodeLocation`] for the requested [`BytecodeId`], if it is known by the
