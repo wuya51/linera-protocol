@@ -569,7 +569,7 @@ where
         Ok(response)
     }
 
-    /// Configure the [`QueryContext`] before executing a service to handle a query.
+    /// Configures the [`QueryContext`] before executing a service to handle a query.
     ///
     /// Restarts the service runtime actor if needed, otherwise just updates the local time of the
     /// context.
