@@ -840,7 +840,7 @@ impl Runnable for Job {
 
             Service { config, port } => {
                 let default_chain = context.wallet().default_chain();
-                let service = NodeService::new(config, port, default_chain, storage, context);
+                let service = NodeService::new(config, port, default_chain, context);
                 service.run().await?;
             }
 
