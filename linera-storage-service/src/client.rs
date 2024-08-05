@@ -71,9 +71,10 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClientInternal {
         self.max_stream_queries
     }
 
-    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, ServiceStoreError> {
+    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, ServiceStoreError> {
         ensure!(key.len() <= MAX_KEY_SIZE, ServiceStoreError::KeyTooLong);
         let mut full_key = self.namespace.clone();
+        full_key.extend(root_key);
         full_key.extend(key);
         let query = RequestReadValue { key: full_key };
         let request = tonic::Request::new(query);
@@ -93,9 +94,10 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClientInternal {
         }
     }
 
-    async fn contains_key(&self, key: &[u8]) -> Result<bool, ServiceStoreError> {
+    async fn contains_key(&self, root_key: &[u8], key: &[u8]) -> Result<bool, ServiceStoreError> {
         ensure!(key.len() <= MAX_KEY_SIZE, ServiceStoreError::KeyTooLong);
         let mut full_key = self.namespace.clone();
+        full_key.extend(root_key);
         full_key.extend(key);
         let query = RequestContainsKey { key: full_key };
         let request = tonic::Request::new(query);
@@ -107,11 +109,12 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClientInternal {
         Ok(test)
     }
 
-    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, ServiceStoreError> {
+    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, ServiceStoreError> {
         let mut full_keys = Vec::new();
         for key in keys {
             ensure!(key.len() <= MAX_KEY_SIZE, ServiceStoreError::KeyTooLong);
             let mut full_key = self.namespace.clone();
+            full_key.extend(root_key);
             full_key.extend(&key);
             full_keys.push(full_key);
         }
@@ -127,12 +130,14 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClientInternal {
 
     async fn read_multi_values_bytes(
         &self,
+        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<Option<Vec<u8>>>, ServiceStoreError> {
         let mut full_keys = Vec::new();
         for key in keys {
             ensure!(key.len() <= MAX_KEY_SIZE, ServiceStoreError::KeyTooLong);
             let mut full_key = self.namespace.clone();
+            full_key.extend(root_key);
             full_key.extend(&key);
             full_keys.push(full_key);
         }
@@ -157,6 +162,7 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClientInternal {
 
     async fn find_keys_by_prefix(
         &self,
+        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Vec<Vec<u8>>, ServiceStoreError> {
         ensure!(
@@ -164,6 +170,7 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClientInternal {
             ServiceStoreError::KeyTooLong
         );
         let mut full_key_prefix = self.namespace.clone();
+        full_key_prefix.extend(root_key);
         full_key_prefix.extend(key_prefix);
         let query = RequestFindKeysByPrefix {
             key_prefix: full_key_prefix,
@@ -187,6 +194,7 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClientInternal {
 
     async fn find_key_values_by_prefix(
         &self,
+        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, ServiceStoreError> {
         ensure!(
@@ -194,6 +202,7 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClientInternal {
             ServiceStoreError::KeyTooLong
         );
         let mut full_key_prefix = self.namespace.clone();
+        full_key_prefix.extend(root_key);
         full_key_prefix.extend(key_prefix);
         let query = RequestFindKeyValuesByPrefix {
             key_prefix: full_key_prefix,
@@ -223,7 +232,7 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClientInternal {
 impl WritableKeyValueStore<ServiceStoreError> for ServiceStoreClientInternal {
     const MAX_VALUE_SIZE: usize = usize::MAX;
 
-    async fn write_batch(&self, batch: Batch, _base_key: &[u8]) -> Result<(), ServiceStoreError> {
+    async fn write_batch(&self, root_key: &[u8], batch: Batch) -> Result<(), ServiceStoreError> {
         if batch.operations.is_empty() {
             return Ok(());
         }
@@ -235,7 +244,7 @@ impl WritableKeyValueStore<ServiceStoreError> for ServiceStoreClientInternal {
                 WriteOperation::Put { key, value } => (key.len(), value.len()),
                 WriteOperation::DeletePrefix { key_prefix } => (key_prefix.len(), 0),
             };
-            let operation_size = key_len + value_len;
+            let operation_size = key_len + value_len + root_key.len();
             ensure!(key_len <= MAX_KEY_SIZE, ServiceStoreError::KeyTooLong);
             if operation_size + chunk_size < MAX_PAYLOAD_SIZE {
                 let statement = self.get_statement(operation);
@@ -251,6 +260,7 @@ impl WritableKeyValueStore<ServiceStoreError> for ServiceStoreClientInternal {
                         unreachable!();
                     };
                     let mut full_key = self.namespace.clone();
+                    full_key.extend(root_key);
                     full_key.extend(key);
                     let value_chunks = value
                         .chunks(MAX_PAYLOAD_SIZE)
@@ -280,7 +290,7 @@ impl WritableKeyValueStore<ServiceStoreError> for ServiceStoreClientInternal {
         self.submit_statements(mem::take(&mut statements)).await
     }
 
-    async fn clear_journal(&self, _base_key: &[u8]) -> Result<(), ServiceStoreError> {
+    async fn clear_journal(&self, _root_key: &[u8]) -> Result<(), ServiceStoreError> {
         Ok(())
     }
 }
@@ -481,8 +491,9 @@ pub async fn storage_service_check_absence(endpoint: &str) -> Result<bool, Servi
 pub async fn storage_service_check_validity(endpoint: &str) -> Result<(), ServiceStoreError> {
     let config = service_config_from_endpoint(endpoint).unwrap();
     let namespace = "namespace";
+    let root_key = &[];
     let store = ServiceStoreClientInternal::connect(&config, namespace).await?;
-    let _value = store.read_value_bytes(&[42]).await?;
+    let _value = store.read_value_bytes(root_key, &[42]).await?;
     Ok(())
 }
 
@@ -513,49 +524,52 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClient {
         self.store.max_stream_queries()
     }
 
-    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, ServiceStoreError> {
-        self.store.read_value_bytes(key).await
+    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, ServiceStoreError> {
+        self.store.read_value_bytes(root_key, key).await
     }
 
-    async fn contains_key(&self, key: &[u8]) -> Result<bool, ServiceStoreError> {
-        self.store.contains_key(key).await
+    async fn contains_key(&self, root_key: &[u8], key: &[u8]) -> Result<bool, ServiceStoreError> {
+        self.store.contains_key(root_key, key).await
     }
 
-    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, ServiceStoreError> {
-        self.store.contains_keys(keys).await
+    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, ServiceStoreError> {
+        self.store.contains_keys(root_key, keys).await
     }
 
     async fn read_multi_values_bytes(
         &self,
+        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<Option<Vec<u8>>>, ServiceStoreError> {
-        self.store.read_multi_values_bytes(keys).await
+        self.store.read_multi_values_bytes(root_key, keys).await
     }
 
     async fn find_keys_by_prefix(
         &self,
+        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Vec<Vec<u8>>, ServiceStoreError> {
-        self.store.find_keys_by_prefix(key_prefix).await
+        self.store.find_keys_by_prefix(root_key, key_prefix).await
     }
 
     async fn find_key_values_by_prefix(
         &self,
+        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, ServiceStoreError> {
-        self.store.find_key_values_by_prefix(key_prefix).await
+        self.store.find_key_values_by_prefix(root_key, key_prefix).await
     }
 }
 
 impl WritableKeyValueStore<ServiceStoreError> for ServiceStoreClient {
     const MAX_VALUE_SIZE: usize = usize::MAX;
 
-    async fn write_batch(&self, batch: Batch, base_key: &[u8]) -> Result<(), ServiceStoreError> {
-        self.store.write_batch(batch, base_key).await
+    async fn write_batch(&self, root_key: &[u8], batch: Batch) -> Result<(), ServiceStoreError> {
+        self.store.write_batch(root_key, batch).await
     }
 
-    async fn clear_journal(&self, base_key: &[u8]) -> Result<(), ServiceStoreError> {
-        self.store.clear_journal(base_key).await
+    async fn clear_journal(&self, root_key: &[u8]) -> Result<(), ServiceStoreError> {
+        self.store.clear_journal(root_key).await
     }
 }
 
