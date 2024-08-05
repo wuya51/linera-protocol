@@ -43,6 +43,9 @@ impl Default for MockKeyValueStore {
     }
 }
 
+/// A root-key being used during operations.
+const ROOT_KEY: &[u8] = &[];
+
 /// Helper type to keep track of created promises by one of the functions.
 #[derive(Default)]
 struct PromiseRegistry<T> {
@@ -77,7 +80,7 @@ impl MockKeyValueStore {
     pub(crate) fn contains_key_new(&self, key: &[u8]) -> u32 {
         self.contains_key_promises.register(
             self.store
-                .contains_key(key)
+                .contains_key(ROOT_KEY, key)
                 .now_or_never()
                 .expect("Memory store should never wait for anything")
                 .expect("Memory store should never fail"),
@@ -94,7 +97,7 @@ impl MockKeyValueStore {
     pub(crate) fn contains_keys_new(&self, keys: &[Vec<u8>]) -> u32 {
         self.contains_keys_promises.register(
             self.store
-                .contains_keys(keys.to_vec())
+                .contains_keys(ROOT_KEY, keys.to_vec())
                 .now_or_never()
                 .expect("Memory store should never wait for anything")
                 .expect("Memory store should never fail"),
@@ -111,7 +114,7 @@ impl MockKeyValueStore {
     pub(crate) fn read_multi_values_bytes_new(&self, keys: &[Vec<u8>]) -> u32 {
         self.read_multi_promises.register(
             self.store
-                .read_multi_values_bytes(keys.to_vec())
+                .read_multi_values_bytes(ROOT_KEY, keys.to_vec())
                 .now_or_never()
                 .expect("Memory store should never wait for anything")
                 .expect("Memory store should never fail"),
@@ -129,7 +132,7 @@ impl MockKeyValueStore {
     pub(crate) fn read_value_bytes_new(&self, key: &[u8]) -> u32 {
         self.read_single_promises.register(
             self.store
-                .read_value_bytes(key)
+                .read_value_bytes(ROOT_KEY, key)
                 .now_or_never()
                 .expect("Memory store should never wait for anything")
                 .expect("Memory store should never fail"),
@@ -146,7 +149,7 @@ impl MockKeyValueStore {
     pub(crate) fn find_keys_new(&self, key_prefix: &[u8]) -> u32 {
         self.find_keys_promises.register(
             self.store
-                .find_keys_by_prefix(key_prefix)
+                .find_keys_by_prefix(ROOT_KEY, key_prefix)
                 .now_or_never()
                 .expect("Memory store should never wait for anything")
                 .expect("Memory store should never fail"),
@@ -163,7 +166,7 @@ impl MockKeyValueStore {
     pub(crate) fn find_key_values_new(&self, key_prefix: &[u8]) -> u32 {
         self.find_key_values_promises.register(
             self.store
-                .find_key_values_by_prefix(key_prefix)
+                .find_key_values_by_prefix(ROOT_KEY, key_prefix)
                 .now_or_never()
                 .expect("Memory store should never wait for anything")
                 .expect("Memory store should never fail"),
@@ -179,7 +182,7 @@ impl MockKeyValueStore {
     /// Writes a `batch` of operations to storage.
     pub(crate) fn write_batch(&self, batch: Batch) {
         self.store
-            .write_batch(batch, &[])
+            .write_batch(ROOT_KEY, batch)
             .now_or_never()
             .expect("Memory store should never wait for anything")
             .expect("Memory store should never fail");
