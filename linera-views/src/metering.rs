@@ -133,34 +133,34 @@ where
         self.store.max_stream_queries()
     }
 
-    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, E> {
+    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, E> {
         let _metric = self.counter.read_value_bytes.measure_latency();
-        self.store.read_value_bytes(key).await
+        self.store.read_value_bytes(root_key, key).await
     }
 
-    async fn contains_key(&self, key: &[u8]) -> Result<bool, E> {
+    async fn contains_key(&self, root_key: &[u8], key: &[u8]) -> Result<bool, E> {
         let _metric = self.counter.contains_key.measure_latency();
-        self.store.contains_key(key).await
+        self.store.contains_key(root_key, key).await
     }
 
-    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, E> {
+    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, E> {
         let _metric = self.counter.contains_keys.measure_latency();
-        self.store.contains_keys(keys).await
+        self.store.contains_keys(root_key, keys).await
     }
 
-    async fn read_multi_values_bytes(&self, keys: Vec<Vec<u8>>) -> Result<Vec<Option<Vec<u8>>>, E> {
+    async fn read_multi_values_bytes(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<Option<Vec<u8>>>, E> {
         let _metric = self.counter.read_multi_values_bytes.measure_latency();
-        self.store.read_multi_values_bytes(keys).await
+        self.store.read_multi_values_bytes(root_key, keys).await
     }
 
-    async fn find_keys_by_prefix(&self, key_prefix: &[u8]) -> Result<Self::Keys, E> {
+    async fn find_keys_by_prefix(&self, root_key: &[u8], key_prefix: &[u8]) -> Result<Self::Keys, E> {
         let _metric = self.counter.find_keys_by_prefix.measure_latency();
-        self.store.find_keys_by_prefix(key_prefix).await
+        self.store.find_keys_by_prefix(root_key, key_prefix).await
     }
 
-    async fn find_key_values_by_prefix(&self, key_prefix: &[u8]) -> Result<Self::KeyValues, E> {
+    async fn find_key_values_by_prefix(&self, root_key: &[u8], key_prefix: &[u8]) -> Result<Self::KeyValues, E> {
         let _metric = self.counter.find_key_values_by_prefix.measure_latency();
-        self.store.find_key_values_by_prefix(key_prefix).await
+        self.store.find_key_values_by_prefix(root_key, key_prefix).await
     }
 }
 
@@ -170,14 +170,14 @@ where
 {
     const MAX_VALUE_SIZE: usize = K::MAX_VALUE_SIZE;
 
-    async fn write_batch(&self, batch: Batch, base_key: &[u8]) -> Result<(), E> {
+    async fn write_batch(&self, root_key: &[u8], batch: Batch) -> Result<(), E> {
         let _metric = self.counter.write_batch.measure_latency();
-        self.store.write_batch(batch, base_key).await
+        self.store.write_batch(root_key, batch).await
     }
 
-    async fn clear_journal(&self, base_key: &[u8]) -> Result<(), E> {
+    async fn clear_journal(&self, root_key: &[u8]) -> Result<(), E> {
         let _metric = self.counter.clear_journal.measure_latency();
-        self.store.clear_journal(base_key).await
+        self.store.clear_journal(root_key).await
     }
 }
 
