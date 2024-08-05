@@ -205,6 +205,9 @@ pub static LOAD_CHAIN_LATENCY: LazyLock<HistogramVec> = LazyLock::new(|| {
     .expect("Histogram creation should not fail")
 });
 
+/// A root-key being used during operations.
+const ROOT_KEY: &[u8] = &[];
+
 /// A storage implemented from a [`KeyValueStore`]
 pub struct DbStorageInner<Client> {
     client: Client,
@@ -433,14 +436,14 @@ where
             user_services: self.client.user_services.clone(),
         };
         let client = self.client.client.clone();
-        let base_key = bcs::to_bytes(&BaseKey::ChainState(chain_id))?;
-        let context = ContextFromStore::create(client, base_key, runtime_context).await?;
+        let root_key = bcs::to_bytes(&BaseKey::ChainState(chain_id))?;
+        let context = ContextFromStore::create(client, root_key, runtime_context).await?;
         ChainStateView::load(context).await
     }
 
     async fn contains_hashed_certificate_value(&self, hash: CryptoHash) -> Result<bool, ViewError> {
         let value_key = bcs::to_bytes(&BaseKey::CertificateValue(hash))?;
-        let test = self.client.client.contains_key(&value_key).await?;
+        let test = self.client.client.contains_key(ROOT_KEY, &value_key).await?;
         #[cfg(with_metrics)]
         CONTAINS_HASHED_CERTIFICATE_VALUE_COUNTER
             .with_label_values(&[])
@@ -457,7 +460,7 @@ where
             let value_key = bcs::to_bytes(&BaseKey::CertificateValue(hash))?;
             keys.push(value_key);
         }
-        let test = self.client.client.contains_keys(keys).await?;
+        let test = self.client.client.contains_keys(ROOT_KEY, keys).await?;
         #[cfg(with_metrics)]
         CONTAINS_HASHED_CERTIFICATE_VALUES_COUNTER
             .with_label_values(&[])
@@ -467,7 +470,7 @@ where
 
     async fn contains_blob(&self, blob_id: BlobId) -> Result<bool, ViewError> {
         let blob_key = bcs::to_bytes(&BaseKey::Blob(blob_id))?;
-        let test = self.client.client.contains_key(&blob_key).await?;
+        let test = self.client.client.contains_key(ROOT_KEY, &blob_key).await?;
         #[cfg(with_metrics)]
         CONTAINS_BLOB_COUNTER.with_label_values(&[]).inc();
         Ok(test)
@@ -479,7 +482,7 @@ where
             let key = bcs::to_bytes(&BaseKey::Blob(blob_id))?;
             keys.push(key);
         }
-        let results = self.client.client.contains_keys(keys).await?;
+        let results = self.client.client.contains_keys(ROOT_KEY, keys).await?;
         let mut missing_blobs = Vec::new();
         for (blob_id, result) in blob_ids.into_iter().zip(results) {
             if !result {
@@ -493,7 +496,7 @@ where
 
     async fn contains_blob_state(&self, blob_id: BlobId) -> Result<bool, ViewError> {
         let blob_key = bcs::to_bytes(&BaseKey::BlobState(blob_id))?;
-        let test = self.client.client.contains_key(&blob_key).await?;
+        let test = self.client.client.contains_key(ROOT_KEY, &blob_key).await?;
         #[cfg(with_metrics)]
         CONTAINS_BLOB_STATE_COUNTER.with_label_values(&[]).inc();
         Ok(test)
@@ -507,7 +510,7 @@ where
         let maybe_value = self
             .client
             .client
-            .read_value::<CertificateValue>(&value_key)
+            .read_value::<CertificateValue>(ROOT_KEY, &value_key)
             .await?;
         #[cfg(with_metrics)]
         READ_HASHED_CERTIFICATE_VALUE_COUNTER
@@ -522,7 +525,7 @@ where
         let maybe_blob_content = self
             .client
             .client
-            .read_value::<BlobContent>(&blob_key)
+            .read_value::<BlobContent>(ROOT_KEY, &blob_key)
             .await?;
         #[cfg(with_metrics)]
         READ_BLOB_COUNTER.with_label_values(&[]).inc();
@@ -539,7 +542,7 @@ where
         let maybe_blob_contents = self
             .client
             .client
-            .read_multi_values::<BlobContent>(blob_keys)
+            .read_multi_values::<BlobContent>(ROOT_KEY, blob_keys)
             .await?;
         #[cfg(with_metrics)]
         READ_BLOB_COUNTER
@@ -560,7 +563,7 @@ where
         let maybe_blob_state = self
             .client
             .client
-            .read_value::<BlobState>(&blob_state_key)
+            .read_value::<BlobState>(ROOT_KEY, &blob_state_key)
             .await?;
         #[cfg(with_metrics)]
         READ_BLOB_STATE_COUNTER.with_label_values(&[]).inc();
@@ -679,7 +682,7 @@ where
         let cert_key = bcs::to_bytes(&BaseKey::Certificate(hash))?;
         let value_key = bcs::to_bytes(&BaseKey::CertificateValue(hash))?;
         let keys = vec![cert_key, value_key];
-        let results = self.client.client.contains_keys(keys).await?;
+        let results = self.client.client.contains_keys(ROOT_KEY, keys).await?;
         #[cfg(with_metrics)]
         CONTAINS_CERTIFICATE_COUNTER.with_label_values(&[]).inc();
         Ok(results[0] && results[1])
@@ -689,7 +692,7 @@ where
         let cert_key = bcs::to_bytes(&BaseKey::Certificate(hash))?;
         let value_key = bcs::to_bytes(&BaseKey::CertificateValue(hash))?;
         let keys = vec![cert_key, value_key];
-        let values = self.client.client.read_multi_values_bytes(keys).await;
+        let values = self.client.client.read_multi_values_bytes(ROOT_KEY, keys).await;
         if values.is_ok() {
             #[cfg(with_metrics)]
             READ_CERTIFICATE_COUNTER.with_label_values(&[]).inc();
@@ -776,7 +779,7 @@ where
     }
 
     async fn write_batch(&self, batch: Batch) -> Result<(), ViewError> {
-        self.client.client.write_batch(batch, &[]).await?;
+        self.client.client.write_batch(ROOT_KEY, batch).await?;
         Ok(())
     }
 
