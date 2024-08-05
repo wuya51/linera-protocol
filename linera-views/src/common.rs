@@ -456,7 +456,10 @@ pub trait LocalAdminKeyValueStore: Sized {
     type Config: Send + Sync;
 
     /// Connects to an existing namespace using the given configuration.
-    async fn connect(config: &Self::Config, namespace: &str) -> Result<Self, Self::Error>;
+    async fn connect(config: &Self::Config, namespace: &str, root_key: &[u8]) -> Result<Self, Self::Error>;
+
+    /// Take a connection and create a new one with a different `root_key`.
+    fn clone_with_root_key(&self, root_key: &[u8]) -> Result<Self, Self::Error>;
 
     /// Obtains the list of existing namespaces.
     async fn list_all(config: &Self::Config) -> Result<Vec<String>, Self::Error>;
@@ -485,12 +488,13 @@ pub trait LocalAdminKeyValueStore: Sized {
     fn maybe_create_and_connect(
         config: &Self::Config,
         namespace: &str,
+        root_key: &[u8],
     ) -> impl Future<Output = Result<Self, Self::Error>> {
         async {
             if !Self::exists(config, namespace).await? {
                 Self::create(config, namespace).await?;
             }
-            Self::connect(config, namespace).await
+            Self::connect(config, namespace, root_key).await
         }
     }
 
@@ -498,13 +502,14 @@ pub trait LocalAdminKeyValueStore: Sized {
     fn recreate_and_connect(
         config: &Self::Config,
         namespace: &str,
+        root_key: &[u8],
     ) -> impl Future<Output = Result<Self, Self::Error>> {
         async {
             if Self::exists(config, namespace).await? {
                 Self::delete(config, namespace).await?;
             }
             Self::create(config, namespace).await?;
-            Self::connect(config, namespace).await
+            Self::connect(config, namespace, root_key).await
         }
     }
 }
