@@ -82,7 +82,7 @@ impl ScyllaDbClient {
         );
         let read_value = Query::new(query);
         let query = format!(
-            "SELECT dummy FROM kv.{} WHERE root_key = ? AND k = ? ALLOW FILTERING",
+            "SELECT root_key FROM kv.{} WHERE root_key = ? AND k = ? ALLOW FILTERING",
             namespace
         );
         let contains_key = Query::new(query);
@@ -97,7 +97,7 @@ impl ScyllaDbClient {
         let query = format!("DELETE FROM kv.{} WHERE root_key = ? AND k = ?", namespace);
         let write_batch_deletion = Query::new(query);
         let query = format!(
-            "INSERT INTO kv.{} (root_key, k, v) VALUES (0, ?, ?)",
+            "INSERT INTO kv.{} (root_key, k, v) VALUES (?, ?, ?)",
             namespace
         );
         let write_batch_insertion = Query::new(query);
@@ -233,7 +233,7 @@ impl ScyllaDbClient {
         let mut group_query = "?".to_string();
         group_query.push_str(&",?".repeat(num_unique_keys - 1));
         let query = format!(
-            "SELECT k FROM kv.{} WHERE dummy = 0 AND k IN ({}) ALLOW FILTERING",
+            "SELECT k FROM kv.{} WHERE root_key = ? AND k IN ({}) ALLOW FILTERING",
             self.namespace, group_query
         );
         let contains_keys = Query::new(query);
@@ -664,7 +664,10 @@ impl AdminKeyValueStore for ScyllaDbStoreInternal {
             .boxed()
             .await?;
         // We check the way the test can fail. It can fail in different ways.
-        let query = format!("SELECT dummy FROM kv.{} LIMIT 1 ALLOW FILTERING", namespace);
+        let query = format!(
+            "SELECT root_key FROM kv.{} LIMIT 1 ALLOW FILTERING",
+            namespace
+        );
 
         // Execute the query
         let result = session.query(query, &[]).await;
@@ -672,7 +675,7 @@ impl AdminKeyValueStore for ScyllaDbStoreInternal {
         // The missing table translates into a very specific error that we matched
         let miss_msg1 = format!("unconfigured table {}", namespace);
         let miss_msg1 = miss_msg1.as_str();
-        let miss_msg2 = "Undefined name dummy in selection clause";
+        let miss_msg2 = "Undefined name root_key in selection clause";
         let miss_msg3 = "Keyspace kv does not exist";
         let Err(error) = result else {
             // If ok, then the table exists
@@ -715,7 +718,7 @@ impl AdminKeyValueStore for ScyllaDbStoreInternal {
         // The schema appears too complicated for non-trivial reasons.
         // See TODO(#1069).
         let query = format!(
-            "CREATE TABLE kv.{} (dummy int, k blob, v blob, primary key (dummy, k))",
+            "CREATE TABLE kv.{} (root_key blob, k blob, v blob, primary key (root_key, k))",
             namespace
         );
         let _query = session.query(query, &[]).await?;
