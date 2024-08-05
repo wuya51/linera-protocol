@@ -14,7 +14,7 @@ use crate::test_utils::generate_test_namespace;
 use crate::{
     batch::{Batch, DeletePrefixExpander, WriteOperation},
     common::{
-        get_interval, AdminKeyValueStore, CommonStoreConfig, Context, ContextFromStore,
+        get_big_key, get_interval, AdminKeyValueStore, CommonStoreConfig, Context, ContextFromStore,
         KeyIterable, KeyValueStore, ReadableKeyValueStore, WritableKeyValueStore,
     },
     value_splitting::DatabaseConsistencyError,
@@ -87,35 +87,41 @@ impl ReadableKeyValueStore<MemoryStoreError> for MemoryStore {
         self.max_stream_queries
     }
 
-    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, MemoryStoreError> {
+    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, MemoryStoreError> {
         let map = self
             .map
             .read()
             .expect("MemoryStore lock should not be poisoned");
-        Ok(map.get(key).cloned())
+        let big_key = get_big_key(root_key, key);
+        Ok(map.get(&big_key).cloned())
     }
 
-    async fn contains_key(&self, key: &[u8]) -> Result<bool, MemoryStoreError> {
+    async fn contains_key(&self, root_key: &[u8], key: &[u8]) -> Result<bool, MemoryStoreError> {
         let map = self
             .map
             .read()
             .expect("MemoryStore lock should not be poisoned");
-        Ok(map.contains_key(key))
+        let big_key = get_big_key(root_key, key);
+        Ok(map.contains_key(&big_key))
     }
 
-    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, MemoryStoreError> {
+    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, MemoryStoreError> {
         let map = self
             .map
             .read()
             .expect("MemoryStore lock should not be poisoned");
         Ok(keys
-            .into_iter()
-            .map(|key| map.contains_key(&key))
-            .collect::<Vec<_>>())
+           .into_iter()
+           .map(|key| {
+               let big_key = get_big_key(root_key, &key);
+               map.contains_key(&big_key)
+           })
+           .collect::<Vec<_>>())
     }
 
     async fn read_multi_values_bytes(
         &self,
+        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<Option<Vec<u8>>>, MemoryStoreError> {
         let map = self
@@ -124,13 +130,15 @@ impl ReadableKeyValueStore<MemoryStoreError> for MemoryStore {
             .expect("MemoryStore lock should not be poisoned");
         let mut result = Vec::new();
         for key in keys {
-            result.push(map.get(&key).cloned());
+            let big_key = get_big_key(root_key, &key);
+            result.push(map.get(&big_key).cloned());
         }
         Ok(result)
     }
 
     async fn find_keys_by_prefix(
         &self,
+        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Vec<Vec<u8>>, MemoryStoreError> {
         let map = self
@@ -138,8 +146,9 @@ impl ReadableKeyValueStore<MemoryStoreError> for MemoryStore {
             .read()
             .expect("MemoryStore lock should not be poisoned");
         let mut values = Vec::new();
-        let len = key_prefix.len();
-        for (key, _value) in map.range(get_interval(key_prefix.to_vec())) {
+        let len = key_prefix.len() + root_key.len();
+        let big_key_prefix = get_big_key(root_key, key_prefix);
+        for (key, _value) in map.range(get_interval(big_key_prefix)) {
             values.push(key[len..].to_vec())
         }
         Ok(values)
@@ -147,6 +156,7 @@ impl ReadableKeyValueStore<MemoryStoreError> for MemoryStore {
 
     async fn find_key_values_by_prefix(
         &self,
+        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, MemoryStoreError> {
         let map = self
@@ -154,8 +164,9 @@ impl ReadableKeyValueStore<MemoryStoreError> for MemoryStore {
             .read()
             .expect("MemoryStore lock should not be poisoned");
         let mut key_values = Vec::new();
-        let len = key_prefix.len();
-        for (key, value) in map.range(get_interval(key_prefix.to_vec())) {
+        let len = key_prefix.len() + root_key.len();
+        let big_key_prefix = get_big_key(root_key, key_prefix);
+        for (key, value) in map.range(get_interval(big_key_prefix)) {
             let key_value = (key[len..].to_vec(), value.to_vec());
             key_values.push(key_value);
         }
@@ -166,7 +177,7 @@ impl ReadableKeyValueStore<MemoryStoreError> for MemoryStore {
 impl WritableKeyValueStore<MemoryStoreError> for MemoryStore {
     const MAX_VALUE_SIZE: usize = usize::MAX;
 
-    async fn write_batch(&self, batch: Batch, _base_key: &[u8]) -> Result<(), MemoryStoreError> {
+    async fn write_batch(&self, root_key: &[u8], batch: Batch) -> Result<(), MemoryStoreError> {
         let mut map = self
             .map
             .write()
@@ -174,14 +185,17 @@ impl WritableKeyValueStore<MemoryStoreError> for MemoryStore {
         for ent in batch.operations {
             match ent {
                 WriteOperation::Put { key, value } => {
-                    map.insert(key, value);
+                    let big_key = get_big_key(root_key, &key);
+                    map.insert(big_key, value);
                 }
                 WriteOperation::Delete { key } => {
-                    map.remove(&key);
+                    let big_key = get_big_key(root_key, &key);
+                    map.remove(&big_key);
                 }
                 WriteOperation::DeletePrefix { key_prefix } => {
+                    let big_key_prefix = get_big_key(root_key, &key_prefix);
                     let key_list = map
-                        .range(get_interval(key_prefix))
+                        .range(get_interval(big_key_prefix))
                         .map(|x| x.0.to_vec())
                         .collect::<Vec<_>>();
                     for key in key_list {
@@ -193,7 +207,7 @@ impl WritableKeyValueStore<MemoryStoreError> for MemoryStore {
         Ok(())
     }
 
-    async fn clear_journal(&self, _base_key: &[u8]) -> Result<(), MemoryStoreError> {
+    async fn clear_journal(&self, _root_key: &[u8]) -> Result<(), MemoryStoreError> {
         Ok(())
     }
 }
@@ -348,9 +362,11 @@ impl<E> MemoryContext<E> {
     /// Creates a [`MemoryContext`].
     pub fn new(max_stream_queries: usize, namespace: &str, extra: E) -> Self {
         let store = MemoryStore::new(max_stream_queries, namespace).unwrap();
+        let root_key = Vec::new();
         let base_key = Vec::new();
         Self {
             store,
+            root_key,
             base_key,
             extra,
         }
@@ -360,9 +376,11 @@ impl<E> MemoryContext<E> {
     #[cfg(with_testing)]
     pub fn new_for_testing(max_stream_queries: usize, namespace: &str, extra: E) -> Self {
         let store = MemoryStore::new_for_testing(max_stream_queries, namespace).unwrap();
+        let root_key = Vec::new();
         let base_key = Vec::new();
         Self {
             store,
+            root_key,
             base_key,
             extra,
         }
@@ -417,7 +435,7 @@ impl From<MemoryStoreError> for ViewError {
 impl DeletePrefixExpander for MemoryContext<()> {
     type Error = MemoryStoreError;
 
-    async fn expand_delete_prefix(&self, key_prefix: &[u8]) -> Result<Vec<Vec<u8>>, Self::Error> {
+    async fn expand_delete_prefix(&self, _root_key: &[u8], key_prefix: &[u8]) -> Result<Vec<Vec<u8>>, Self::Error> {
         let mut vector_list = Vec::new();
         for key in <Vec<Vec<u8>> as KeyIterable<Self::Error>>::iterator(
             &self.find_keys_by_prefix(key_prefix).await?,

@@ -60,10 +60,10 @@ where
         self.store.max_stream_queries()
     }
 
-    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, K::Error> {
+    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, K::Error> {
         let mut big_key = key.to_vec();
         big_key.extend(&[0, 0, 0, 0]);
-        let value = self.store.read_value_bytes(&big_key).await?;
+        let value = self.store.read_value_bytes(root_key, &big_key).await?;
         let Some(value) = value else {
             return Ok(None);
         };
@@ -77,7 +77,7 @@ where
             let big_key_segment = Self::get_segment_key(key, i)?;
             big_keys.push(big_key_segment);
         }
-        let segments = self.store.read_multi_values_bytes(big_keys).await?;
+        let segments = self.store.read_multi_values_bytes(root_key, big_keys).await?;
         for segment in segments {
             match segment {
                 None => {
@@ -91,13 +91,13 @@ where
         Ok(Some(big_value))
     }
 
-    async fn contains_key(&self, key: &[u8]) -> Result<bool, K::Error> {
+    async fn contains_key(&self, root_key: &[u8], key: &[u8]) -> Result<bool, K::Error> {
         let mut big_key = key.to_vec();
         big_key.extend(&[0, 0, 0, 0]);
-        self.store.contains_key(&big_key).await
+        self.store.contains_key(root_key, &big_key).await
     }
 
-    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, K::Error> {
+    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, K::Error> {
         let big_keys = keys
             .into_iter()
             .map(|key| {
@@ -106,11 +106,12 @@ where
                 big_key
             })
             .collect::<Vec<_>>();
-        self.store.contains_keys(big_keys).await
+        self.store.contains_keys(root_key, big_keys).await
     }
 
     async fn read_multi_values_bytes(
         &self,
+        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<Option<Vec<u8>>>, K::Error> {
         let mut big_keys = Vec::new();
@@ -119,7 +120,7 @@ where
             big_key.extend(&[0, 0, 0, 0]);
             big_keys.push(big_key);
         }
-        let values = self.store.read_multi_values_bytes(big_keys).await?;
+        let values = self.store.read_multi_values_bytes(root_key, big_keys).await?;
         let mut big_values = Vec::<Option<Vec<u8>>>::new();
         let mut keys_add = Vec::new();
         let mut n_blocks = Vec::new();
@@ -144,7 +145,7 @@ where
         if !keys_add.is_empty() {
             let mut segments = self
                 .store
-                .read_multi_values_bytes(keys_add)
+                .read_multi_values_bytes(root_key, keys_add)
                 .await?
                 .into_iter();
             for (idx, count) in n_blocks.iter().enumerate() {
@@ -162,9 +163,9 @@ where
         Ok(big_values)
     }
 
-    async fn find_keys_by_prefix(&self, key_prefix: &[u8]) -> Result<Self::Keys, K::Error> {
+    async fn find_keys_by_prefix(&self, root_key: &[u8], key_prefix: &[u8]) -> Result<Self::Keys, K::Error> {
         let mut keys = Vec::new();
-        for big_key in self.store.find_keys_by_prefix(key_prefix).await?.iterator() {
+        for big_key in self.store.find_keys_by_prefix(root_key, key_prefix).await?.iterator() {
             let big_key = big_key?;
             let len = big_key.len();
             if Self::read_index_from_key(big_key)? == 0 {
@@ -177,9 +178,10 @@ where
 
     async fn find_key_values_by_prefix(
         &self,
+        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, K::Error> {
-        let small_key_values = self.store.find_key_values_by_prefix(key_prefix).await?;
+        let small_key_values = self.store.find_key_values_by_prefix(root_key, key_prefix).await?;
         let mut small_kv_iterator = small_key_values.into_iterator_owned();
         let mut key_values = Vec::new();
         while let Some(result) = small_kv_iterator.next() {
@@ -216,7 +218,7 @@ where
 {
     const MAX_VALUE_SIZE: usize = usize::MAX;
 
-    async fn write_batch(&self, batch: Batch, base_key: &[u8]) -> Result<(), K::Error> {
+    async fn write_batch(&self, root_key: &[u8], batch: Batch) -> Result<(), K::Error> {
         let mut batch_new = Batch::new();
         for operation in batch.operations {
             match operation {
@@ -246,11 +248,11 @@ where
                 }
             }
         }
-        self.store.write_batch(batch_new, base_key).await
+        self.store.write_batch(root_key, batch_new).await
     }
 
-    async fn clear_journal(&self, base_key: &[u8]) -> Result<(), K::Error> {
-        self.store.clear_journal(base_key).await
+    async fn clear_journal(&self, root_key: &[u8]) -> Result<(), K::Error> {
+        self.store.clear_journal(root_key).await
     }
 }
 

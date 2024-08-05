@@ -91,6 +91,7 @@ impl UnorderedBatch {
     /// `key_prefix_deletions`. This requires accessing the database to eliminate them.
     pub async fn expand_delete_prefixes<DB: DeletePrefixExpander>(
         self,
+        root_key: &[u8],
         db: &DB,
     ) -> Result<SimpleUnorderedBatch, DB::Error> {
         let mut insert_set = HashSet::new();
@@ -100,7 +101,7 @@ impl UnorderedBatch {
         let insertions = self.simple_unordered_batch.insertions;
         let mut deletions = self.simple_unordered_batch.deletions;
         for key_prefix in self.key_prefix_deletions {
-            for short_key in db.expand_delete_prefix(&key_prefix).await?.iter() {
+            for short_key in db.expand_delete_prefix(root_key, &key_prefix).await?.iter() {
                 let mut key = key_prefix.clone();
                 key.extend(short_key);
                 if !insert_set.contains(&key) {
@@ -119,6 +120,7 @@ impl UnorderedBatch {
     /// lists of deleted keys.
     pub async fn expand_colliding_prefix_deletions<DB: DeletePrefixExpander>(
         &mut self,
+        root_key: &[u8],
         db: &DB,
     ) -> Result<(), DB::Error> {
         let inserted_keys = self
@@ -134,7 +136,7 @@ impl UnorderedBatch {
                 .next()
                 .is_some()
             {
-                for short_key in db.expand_delete_prefix(key_prefix).await?.iter() {
+                for short_key in db.expand_delete_prefix(root_key, key_prefix).await?.iter() {
                     let mut key = key_prefix.clone();
                     key.extend(short_key);
                     if !inserted_keys.contains(&key) {
@@ -355,7 +357,7 @@ pub trait LocalDeletePrefixExpander {
     type Error: Debug;
 
     /// Returns the list of keys to be appended to the list.
-    async fn expand_delete_prefix(&self, key_prefix: &[u8]) -> Result<Vec<Vec<u8>>, Self::Error>;
+    async fn expand_delete_prefix(&self, root_key: &[u8], key_prefix: &[u8]) -> Result<Vec<Vec<u8>>, Self::Error>;
 }
 
 /// A notion of batch useful for certain computations (notably journaling).
@@ -367,6 +369,7 @@ pub trait SimplifiedBatch: Sized + Send + Sync {
     /// Creates a simplified batch from a standard one.
     async fn from_batch<S: DeletePrefixExpander + Send + Sync>(
         store: S,
+        root_key: &[u8],
         batch: Batch,
     ) -> Result<Self, S::Error>;
 
@@ -466,10 +469,11 @@ impl SimplifiedBatch for SimpleUnorderedBatch {
 
     async fn from_batch<S: DeletePrefixExpander + Send + Sync>(
         store: S,
+        root_key: &[u8],
         batch: Batch,
     ) -> Result<Self, S::Error> {
         let unordered_batch = batch.simplify();
-        unordered_batch.expand_delete_prefixes(&store).await
+        unordered_batch.expand_delete_prefixes(root_key, &store).await
     }
 }
 
@@ -569,11 +573,12 @@ impl SimplifiedBatch for UnorderedBatch {
 
     async fn from_batch<S: DeletePrefixExpander + Send + Sync>(
         store: S,
+        root_key: &[u8],
         batch: Batch,
     ) -> Result<Self, S::Error> {
         let mut unordered_batch = batch.simplify();
         unordered_batch
-            .expand_colliding_prefix_deletions(&store)
+            .expand_colliding_prefix_deletions(root_key, &store)
             .await?;
         Ok(unordered_batch)
     }
@@ -683,6 +688,7 @@ mod tests {
     #[tokio::test]
     async fn test_simplify_batch5() {
         let context = create_test_memory_context();
+        let root_key = context.root_key();
         let mut batch = Batch::new();
         batch.put_key_value_bytes(vec![1, 2, 3], vec![]);
         batch.put_key_value_bytes(vec![1, 2, 4], vec![]);
@@ -693,7 +699,7 @@ mod tests {
         batch.delete_key_prefix(vec![1, 2]);
         let unordered_batch = batch.simplify();
         let simple_unordered_batch = unordered_batch
-            .expand_delete_prefixes(&context)
+            .expand_delete_prefixes(&root_key, &context)
             .await
             .unwrap();
         assert_eq!(

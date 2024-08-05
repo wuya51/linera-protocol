@@ -154,6 +154,13 @@ where
     }
 }
 
+pub(crate) fn get_big_key(root_key: &[u8], key: &[u8]) -> Vec<u8> {
+    let mut big_key = root_key.to_vec();
+    big_key.extend(key);
+    big_key
+}
+
+
 pub(crate) fn from_bytes_option_or_default<V: DeserializeOwned + Default, E>(
     key_opt: &Option<Vec<u8>>,
 ) -> Result<V, E>
@@ -360,22 +367,22 @@ pub trait LocalReadableKeyValueStore<E> {
     fn max_stream_queries(&self) -> usize;
 
     /// Retrieves a `Vec<u8>` from the database using the provided `key`.
-    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, E>;
+    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, E>;
 
     /// Tests whether a key exists in the database
-    async fn contains_key(&self, key: &[u8]) -> Result<bool, E>;
+    async fn contains_key(&self, root_key: &[u8], key: &[u8]) -> Result<bool, E>;
 
     /// Tests whether a list of keys exist in the database
-    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, E>;
+    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, E>;
 
     /// Retrieves multiple `Vec<u8>` from the database using the provided `keys`.
-    async fn read_multi_values_bytes(&self, keys: Vec<Vec<u8>>) -> Result<Vec<Option<Vec<u8>>>, E>;
+    async fn read_multi_values_bytes(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<Option<Vec<u8>>>, E>;
 
     /// Finds the `key` matching the prefix. The prefix is not included in the returned keys.
-    async fn find_keys_by_prefix(&self, key_prefix: &[u8]) -> Result<Self::Keys, E>;
+    async fn find_keys_by_prefix(&self, root_key: &[u8], key_prefix: &[u8]) -> Result<Self::Keys, E>;
 
     /// Finds the `(key,value)` pairs matching the prefix. The prefix is not included in the returned keys.
-    async fn find_key_values_by_prefix(&self, key_prefix: &[u8]) -> Result<Self::KeyValues, E>;
+    async fn find_key_values_by_prefix(&self, root_key: &[u8], key_prefix: &[u8]) -> Result<Self::KeyValues, E>;
 
     // We can't use `async fn` here in the below implementations due to
     // https://github.com/rust-lang/impl-trait-utils/issues/17, but once that bug is fixed
@@ -384,18 +391,20 @@ pub trait LocalReadableKeyValueStore<E> {
     /// Reads a single `key` and deserializes the result if present.
     fn read_value<V: DeserializeOwned>(
         &self,
+        root_key: &[u8],
         key: &[u8],
     ) -> impl Future<Output = Result<Option<V>, E>>
     where
         Self: Sync,
         E: From<bcs::Error>,
     {
-        async { from_bytes_option(&self.read_value_bytes(key).await?) }
+        async { from_bytes_option(&self.read_value_bytes(root_key, key).await?) }
     }
 
     /// Reads multiple `keys` and deserializes the results if present.
     fn read_multi_values<V: DeserializeOwned + Send>(
         &self,
+        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> impl Future<Output = Result<Vec<Option<V>>, E>>
     where
@@ -404,7 +413,7 @@ pub trait LocalReadableKeyValueStore<E> {
     {
         async {
             let mut values = Vec::with_capacity(keys.len());
-            for entry in self.read_multi_values_bytes(keys).await? {
+            for entry in self.read_multi_values_bytes(root_key, keys).await? {
                 values.push(from_bytes_option(&entry)?);
             }
             Ok(values)
@@ -419,11 +428,11 @@ pub trait LocalWritableKeyValueStore<E> {
     const MAX_VALUE_SIZE: usize;
 
     /// Writes the `batch` in the database with `base_key` the base key of the entries for the journal.
-    async fn write_batch(&self, batch: Batch, base_key: &[u8]) -> Result<(), E>;
+    async fn write_batch(&self, root_key: &[u8], batch: Batch) -> Result<(), E>;
 
     /// Clears any journal entry that may remain.
-    /// The journal is located at the `base_key`.
-    async fn clear_journal(&self, base_key: &[u8]) -> Result<(), E>;
+    /// The journal is located at the `root_key`.
+    async fn clear_journal(&self, root_key: &[u8]) -> Result<(), E>;
 }
 
 /// Low-level trait for the administration of stores and their namespaces.
@@ -647,7 +656,10 @@ pub trait Context: Clone {
     /// Obtains a similar [`Context`] implementation with a different base key.
     fn clone_with_base_key(&self, base_key: Vec<u8>) -> Self;
 
-    /// Getter for the address of the current entry (aka the base_key).
+    /// Getter for the address of the root key.
+    fn root_key(&self) -> Vec<u8>;
+
+    /// Getter for the address of the base key.
     fn base_key(&self) -> Vec<u8>;
 
     /// Concatenates the base_key and tag.
@@ -737,7 +749,9 @@ pub trait Context: Clone {
 pub struct ContextFromStore<E, S> {
     /// The DB client that is shared between views.
     pub store: S,
-    /// The base key for the current view.
+    /// The root key for the context.
+    pub root_key: Vec<u8>,
+    /// The base key for the context.
     pub base_key: Vec<u8>,
     /// User-defined data attached to the view.
     pub extra: E,
@@ -753,12 +767,14 @@ where
     /// Creates a context from store that also clears the journal before making it available.
     pub async fn create(
         store: S,
-        base_key: Vec<u8>,
+        root_key: Vec<u8>,
         extra: E,
     ) -> Result<Self, <ContextFromStore<E, S> as Context>::Error> {
-        store.clear_journal(&base_key).await?;
+        store.clear_journal(&root_key).await?;
+        let base_key = Vec::new();
         Ok(ContextFromStore {
             store,
+            root_key,
             base_key,
             extra,
         })
@@ -813,20 +829,24 @@ where
         &self.extra
     }
 
+    fn root_key(&self) -> Vec<u8> {
+        self.root_key.clone()
+    }
+
     fn base_key(&self) -> Vec<u8> {
         self.base_key.clone()
     }
 
     async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
-        log_time_async(self.store.read_value_bytes(key), "read_value_bytes").await
+        log_time_async(self.store.read_value_bytes(&self.root_key, key), "read_value_bytes").await
     }
 
     async fn contains_key(&self, key: &[u8]) -> Result<bool, Self::Error> {
-        log_time_async(self.store.contains_key(key), "contains_key").await
+        log_time_async(self.store.contains_key(&self.root_key, key), "contains_key").await
     }
 
     async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, Self::Error> {
-        log_time_async(self.store.contains_keys(keys), "contains_keys").await
+        log_time_async(self.store.contains_keys(&self.root_key, keys), "contains_keys").await
     }
 
     async fn read_multi_values_bytes(
@@ -834,7 +854,7 @@ where
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<Option<Vec<u8>>>, Self::Error> {
         log_time_async(
-            self.store.read_multi_values_bytes(keys),
+            self.store.read_multi_values_bytes(&self.root_key, keys),
             "read_multi_values_bytes",
         )
         .await
@@ -842,7 +862,7 @@ where
 
     async fn find_keys_by_prefix(&self, key_prefix: &[u8]) -> Result<Self::Keys, Self::Error> {
         log_time_async(
-            self.store.find_keys_by_prefix(key_prefix),
+            self.store.find_keys_by_prefix(&self.root_key, key_prefix),
             "find_keys_by_prefix",
         )
         .await
@@ -853,19 +873,20 @@ where
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, Self::Error> {
         log_time_async(
-            self.store.find_key_values_by_prefix(key_prefix),
+            self.store.find_key_values_by_prefix(&self.root_key, key_prefix),
             "find_key_values_by_prefix",
         )
         .await
     }
 
     async fn write_batch(&self, batch: Batch) -> Result<(), Self::Error> {
-        log_time_async(self.store.write_batch(batch, &self.base_key), "write_batch").await
+        log_time_async(self.store.write_batch(&self.root_key, batch), "write_batch").await
     }
 
     fn clone_with_base_key(&self, base_key: Vec<u8>) -> Self {
         Self {
             store: self.store.clone(),
+            root_key: self.root_key.clone(),
             base_key,
             extra: self.extra.clone(),
         }
