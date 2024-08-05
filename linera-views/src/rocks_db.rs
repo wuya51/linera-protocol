@@ -24,8 +24,8 @@ use crate::metering::{
 use crate::{
     batch::{Batch, WriteOperation},
     common::{
-        get_big_key, get_upper_bound, AdminKeyValueStore, CommonStoreConfig, ContextFromStore, KeyValueStore,
-        ReadableKeyValueStore, WritableKeyValueStore,
+        get_big_key, get_upper_bound, AdminKeyValueStore, CommonStoreConfig, ContextFromStore,
+        KeyValueStore, ReadableKeyValueStore, WritableKeyValueStore,
     },
     lru_caching::LruCachingStore,
     value_splitting::{DatabaseConsistencyError, ValueSplittingStore},
@@ -83,7 +83,11 @@ impl ReadableKeyValueStore<RocksDbStoreError> for RocksDbStoreInternal {
         self.max_stream_queries
     }
 
-    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, RocksDbStoreError> {
+    async fn read_value_bytes(
+        &self,
+        root_key: &[u8],
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>, RocksDbStoreError> {
         ensure!(key.len() <= MAX_KEY_SIZE, RocksDbStoreError::KeyTooLong);
         let client = self.clone();
         let big_key = get_big_key(root_key, key);
@@ -94,16 +98,19 @@ impl ReadableKeyValueStore<RocksDbStoreError> for RocksDbStoreInternal {
         ensure!(key.len() <= MAX_KEY_SIZE, RocksDbStoreError::KeyTooLong);
         let client = self.clone();
         let big_key = get_big_key(root_key, key);
-        let key_may_exist = {
-            tokio::task::spawn_blocking(move || client.db.key_may_exist(&big_key)).await?
-        };
+        let key_may_exist =
+            { tokio::task::spawn_blocking(move || client.db.key_may_exist(&big_key)).await? };
         if !key_may_exist {
             return Ok(false);
         }
         Ok(self.read_value_bytes(root_key, key).await?.is_some())
     }
 
-    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, RocksDbStoreError> {
+    async fn contains_keys(
+        &self,
+        root_key: &[u8],
+        keys: Vec<Vec<u8>>,
+    ) -> Result<Vec<bool>, RocksDbStoreError> {
         let size = keys.len();
         let mut results = vec![false; size];
         let mut handles = Vec::new();
@@ -142,7 +149,10 @@ impl ReadableKeyValueStore<RocksDbStoreError> for RocksDbStoreInternal {
             ensure!(key.len() <= MAX_KEY_SIZE, RocksDbStoreError::KeyTooLong);
         }
         let client = self.clone();
-        let big_keys = keys.into_iter().map(|key| get_big_key(root_key, &key)).collect::<Vec<_>>();
+        let big_keys = keys
+            .into_iter()
+            .map(|key| get_big_key(root_key, &key))
+            .collect::<Vec<_>>();
         let entries = tokio::task::spawn_blocking(move || client.db.multi_get(&big_keys)).await?;
         Ok(entries.into_iter().collect::<Result<_, _>>()?)
     }
@@ -436,7 +446,11 @@ impl ReadableKeyValueStore<RocksDbStoreError> for RocksDbStore {
         self.store.max_stream_queries()
     }
 
-    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, RocksDbStoreError> {
+    async fn read_value_bytes(
+        &self,
+        root_key: &[u8],
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>, RocksDbStoreError> {
         self.store.read_value_bytes(root_key, key).await
     }
 
@@ -444,7 +458,11 @@ impl ReadableKeyValueStore<RocksDbStoreError> for RocksDbStore {
         self.store.contains_key(root_key, key).await
     }
 
-    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, RocksDbStoreError> {
+    async fn contains_keys(
+        &self,
+        root_key: &[u8],
+        keys: Vec<Vec<u8>>,
+    ) -> Result<Vec<bool>, RocksDbStoreError> {
         self.store.contains_keys(root_key, keys).await
     }
 
@@ -469,7 +487,9 @@ impl ReadableKeyValueStore<RocksDbStoreError> for RocksDbStore {
         root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, RocksDbStoreError> {
-        self.store.find_key_values_by_prefix(root_key, key_prefix).await
+        self.store
+            .find_key_values_by_prefix(root_key, key_prefix)
+            .await
     }
 }
 

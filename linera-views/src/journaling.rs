@@ -106,9 +106,18 @@ where
     K: DirectKeyValueStore + Send + Sync,
 {
     type Error = K::Error;
-    async fn expand_delete_prefix(&self, root_key: &[u8], key_prefix: &[u8]) -> Result<Vec<Vec<u8>>, Self::Error> {
+    async fn expand_delete_prefix(
+        &self,
+        root_key: &[u8],
+        key_prefix: &[u8],
+    ) -> Result<Vec<Vec<u8>>, Self::Error> {
         let mut vector_list = Vec::new();
-        for key in self.store.find_keys_by_prefix(root_key, key_prefix).await?.iterator() {
+        for key in self
+            .store
+            .find_keys_by_prefix(root_key, key_prefix)
+            .await?
+            .iterator()
+        {
             vector_list.push(key?.to_vec());
         }
         Ok(vector_list)
@@ -131,7 +140,11 @@ where
         self.store.max_stream_queries()
     }
 
-    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, K::Error> {
+    async fn read_value_bytes(
+        &self,
+        root_key: &[u8],
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>, K::Error> {
         self.store.read_value_bytes(root_key, key).await
     }
 
@@ -139,7 +152,11 @@ where
         self.store.contains_key(root_key, key).await
     }
 
-    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, K::Error> {
+    async fn contains_keys(
+        &self,
+        root_key: &[u8],
+        keys: Vec<Vec<u8>>,
+    ) -> Result<Vec<bool>, K::Error> {
         self.store.contains_keys(root_key, keys).await
     }
 
@@ -151,7 +168,11 @@ where
         self.store.read_multi_values_bytes(root_key, keys).await
     }
 
-    async fn find_keys_by_prefix(&self, root_key: &[u8], key_prefix: &[u8]) -> Result<Self::Keys, K::Error> {
+    async fn find_keys_by_prefix(
+        &self,
+        root_key: &[u8],
+        key_prefix: &[u8],
+    ) -> Result<Self::Keys, K::Error> {
         self.store.find_keys_by_prefix(root_key, key_prefix).await
     }
 
@@ -160,7 +181,9 @@ where
         root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, K::Error> {
-        self.store.find_key_values_by_prefix(root_key, key_prefix).await
+        self.store
+            .find_key_values_by_prefix(root_key, key_prefix)
+            .await
     }
 }
 
@@ -265,8 +288,7 @@ where
     ) -> Result<(), K::Error> {
         let header_key = get_journaling_key(KeyTag::Journal as u8, 0)?;
         while header.block_count > 0 {
-            let block_key =
-                get_journaling_key(KeyTag::Entry as u8, header.block_count - 1)?;
+            let block_key = get_journaling_key(KeyTag::Entry as u8, header.block_count - 1)?;
             // Read the batch of updates (aka. "block") previously saved in the journal.
             let mut batch = self
                 .store

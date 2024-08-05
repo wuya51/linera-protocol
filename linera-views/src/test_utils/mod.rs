@@ -259,14 +259,20 @@ pub async fn run_reads<S: LocalKeyValueStore>(store: S, key_values: Vec<(Vec<u8>
     {
         // Getting the find_keys_by_prefix / find_key_values_by_prefix
         let len_prefix = key_prefix.len();
-        let keys_by_prefix = store.find_keys_by_prefix(&root_key, key_prefix).await.unwrap();
+        let keys_by_prefix = store
+            .find_keys_by_prefix(&root_key, key_prefix)
+            .await
+            .unwrap();
         let keys_request = keys_by_prefix
             .iterator()
             .map(Result::unwrap)
             .collect::<Vec<_>>();
         let mut set_key_value1 = HashSet::new();
         let mut keys_request_deriv = Vec::new();
-        let key_values_by_prefix = store.find_key_values_by_prefix(&root_key, key_prefix).await.unwrap();
+        let key_values_by_prefix = store
+            .find_key_values_by_prefix(&root_key, key_prefix)
+            .await
+            .unwrap();
         for (key, value) in key_values_by_prefix.iterator().map(Result::unwrap) {
             set_key_value1.insert((key, value));
             keys_request_deriv.push(key);
@@ -317,7 +323,10 @@ pub async fn run_reads<S: LocalKeyValueStore>(store: S, key_values: Vec<(Vec<u8>
             values_single_read.push(store.read_value_bytes(&root_key, key).await.unwrap());
         }
         let test_exists_direct = store.contains_keys(&root_key, keys.clone()).await.unwrap();
-        let values_read = store.read_multi_values_bytes(&root_key, keys).await.unwrap();
+        let values_read = store
+            .read_multi_values_bytes(&root_key, keys)
+            .await
+            .unwrap();
         assert_eq!(values, values_read);
         assert_eq!(values, values_single_read);
         let values_read_stat = values_read.iter().map(|x| x.is_some()).collect::<Vec<_>>();
@@ -521,7 +530,13 @@ pub async fn tombstone_triggering_test<C: LocalKeyValueStore>(key_value_store: C
             remaining_key_values.insert(key, value);
         }
     }
-    run_test_batch_from_blank(&key_value_store, &root_key, key_prefix.clone(), batch_insert).await;
+    run_test_batch_from_blank(
+        &key_value_store,
+        &root_key,
+        key_prefix.clone(),
+        batch_insert,
+    )
+    .await;
     // Deleting them all
     key_value_store
         .write_batch(&root_key, batch_delete)

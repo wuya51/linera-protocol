@@ -357,7 +357,11 @@ pub trait LocalDeletePrefixExpander {
     type Error: Debug;
 
     /// Returns the list of keys to be appended to the list.
-    async fn expand_delete_prefix(&self, root_key: &[u8], key_prefix: &[u8]) -> Result<Vec<Vec<u8>>, Self::Error>;
+    async fn expand_delete_prefix(
+        &self,
+        root_key: &[u8],
+        key_prefix: &[u8],
+    ) -> Result<Vec<Vec<u8>>, Self::Error>;
 }
 
 /// A notion of batch useful for certain computations (notably journaling).
@@ -473,7 +477,9 @@ impl SimplifiedBatch for SimpleUnorderedBatch {
         batch: Batch,
     ) -> Result<Self, S::Error> {
         let unordered_batch = batch.simplify();
-        unordered_batch.expand_delete_prefixes(root_key, &store).await
+        unordered_batch
+            .expand_delete_prefixes(root_key, &store)
+            .await
     }
 }
 

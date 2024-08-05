@@ -1094,7 +1094,11 @@ where
         1
     }
 
-    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, ViewError> {
+    async fn read_value_bytes(
+        &self,
+        root_key: &[u8],
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>, ViewError> {
         let view = self.view.read().await;
         let big_key = get_big_key(root_key, key);
         view.get(&big_key).await
@@ -1106,9 +1110,16 @@ where
         view.contains_key(&big_key).await
     }
 
-    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, ViewError> {
+    async fn contains_keys(
+        &self,
+        root_key: &[u8],
+        keys: Vec<Vec<u8>>,
+    ) -> Result<Vec<bool>, ViewError> {
         let view = self.view.read().await;
-        let big_keys = keys.into_iter().map(|key| get_big_key(root_key, &key)).collect::<Vec<_>>();
+        let big_keys = keys
+            .into_iter()
+            .map(|key| get_big_key(root_key, &key))
+            .collect::<Vec<_>>();
         view.contains_keys(big_keys).await
     }
 
@@ -1118,11 +1129,18 @@ where
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<Option<Vec<u8>>>, ViewError> {
         let view = self.view.read().await;
-        let big_keys = keys.into_iter().map(|key| get_big_key(root_key, &key)).collect::<Vec<_>>();
+        let big_keys = keys
+            .into_iter()
+            .map(|key| get_big_key(root_key, &key))
+            .collect::<Vec<_>>();
         view.multi_get(big_keys).await
     }
 
-    async fn find_keys_by_prefix(&self, root_key: &[u8], key_prefix: &[u8]) -> Result<Self::Keys, ViewError> {
+    async fn find_keys_by_prefix(
+        &self,
+        root_key: &[u8],
+        key_prefix: &[u8],
+    ) -> Result<Self::Keys, ViewError> {
         let view = self.view.read().await;
         let big_key_prefix = get_big_key(root_key, key_prefix);
         view.find_keys_by_prefix(&big_key_prefix).await

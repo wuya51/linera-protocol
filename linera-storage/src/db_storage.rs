@@ -443,7 +443,11 @@ where
 
     async fn contains_hashed_certificate_value(&self, hash: CryptoHash) -> Result<bool, ViewError> {
         let value_key = bcs::to_bytes(&BaseKey::CertificateValue(hash))?;
-        let test = self.client.client.contains_key(ROOT_KEY, &value_key).await?;
+        let test = self
+            .client
+            .client
+            .contains_key(ROOT_KEY, &value_key)
+            .await?;
         #[cfg(with_metrics)]
         CONTAINS_HASHED_CERTIFICATE_VALUE_COUNTER
             .with_label_values(&[])
@@ -692,7 +696,11 @@ where
         let cert_key = bcs::to_bytes(&BaseKey::Certificate(hash))?;
         let value_key = bcs::to_bytes(&BaseKey::CertificateValue(hash))?;
         let keys = vec![cert_key, value_key];
-        let values = self.client.client.read_multi_values_bytes(ROOT_KEY, keys).await;
+        let values = self
+            .client
+            .client
+            .read_multi_values_bytes(ROOT_KEY, keys)
+            .await;
         if values.is_ok() {
             #[cfg(with_metrics)]
             READ_CERTIFICATE_COUNTER.with_label_values(&[]).inc();

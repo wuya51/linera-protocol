@@ -148,7 +148,7 @@ impl ScyllaDbClient {
         ensure!(key.len() <= MAX_KEY_SIZE, ScyllaDbStoreError::KeyTooLong);
         let session = &self.session;
         // Read the value of a key
-        let values = (root_key,key);
+        let values = (root_key, key);
         let query = &self.read_value;
         let mut rows = session.query_iter(query.clone(), &values).await?;
         Ok(match rows.next().await {
@@ -248,7 +248,11 @@ impl ScyllaDbClient {
         Ok(values)
     }
 
-    async fn contains_key_internal(&self, root_key: &[u8], key: Vec<u8>) -> Result<bool, ScyllaDbStoreError> {
+    async fn contains_key_internal(
+        &self,
+        root_key: &[u8],
+        key: Vec<u8>,
+    ) -> Result<bool, ScyllaDbStoreError> {
         ensure!(key.len() <= MAX_KEY_SIZE, ScyllaDbStoreError::KeyTooLong);
         let session = &self.session;
         // Read the value of a key
@@ -258,7 +262,11 @@ impl ScyllaDbClient {
         Ok(rows.next().await.is_some())
     }
 
-    async fn write_batch_internal(&self, root_key: &[u8], batch: UnorderedBatch) -> Result<(), ScyllaDbStoreError> {
+    async fn write_batch_internal(
+        &self,
+        root_key: &[u8],
+        batch: UnorderedBatch,
+    ) -> Result<(), ScyllaDbStoreError> {
         let session = &self.session;
         let mut batch_query = scylla::statement::batch::Batch::new(BatchType::Logged);
         let mut batch_values = Vec::new();
@@ -452,7 +460,11 @@ impl ReadableKeyValueStore<ScyllaDbStoreError> for ScyllaDbStoreInternal {
         self.max_stream_queries
     }
 
-    async fn read_value_bytes(&self, root_key:&[u8], key: &[u8]) -> Result<Option<Vec<u8>>, ScyllaDbStoreError> {
+    async fn read_value_bytes(
+        &self,
+        root_key: &[u8],
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>, ScyllaDbStoreError> {
         let store = self.store.deref();
         let _guard = self.acquire().await;
         store.read_value_internal(root_key, key.to_vec()).await
@@ -464,7 +476,11 @@ impl ReadableKeyValueStore<ScyllaDbStoreError> for ScyllaDbStoreInternal {
         store.contains_key_internal(root_key, key.to_vec()).await
     }
 
-    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, ScyllaDbStoreError> {
+    async fn contains_keys(
+        &self,
+        root_key: &[u8],
+        keys: Vec<Vec<u8>>,
+    ) -> Result<Vec<bool>, ScyllaDbStoreError> {
         if keys.is_empty() {
             return Ok(Vec::new());
         }
@@ -544,7 +560,11 @@ impl DirectWritableKeyValueStore<ScyllaDbStoreError> for ScyllaDbStoreInternal {
     // https://github.com/scylladb/scylladb/blob/master/docs/dev/timestamp-conflict-resolution.md
     type Batch = UnorderedBatch;
 
-    async fn write_batch(&self, root_key: &[u8], batch: Self::Batch) -> Result<(), ScyllaDbStoreError> {
+    async fn write_batch(
+        &self,
+        root_key: &[u8],
+        batch: Self::Batch,
+    ) -> Result<(), ScyllaDbStoreError> {
         let store = self.store.deref();
         let _guard = self.acquire().await;
         store.write_batch_internal(root_key, batch).await
@@ -722,8 +742,13 @@ impl DirectKeyValueStore for ScyllaDbStoreInternal {
 impl DeletePrefixExpander for ScyllaDbClient {
     type Error = ScyllaDbStoreError;
 
-    async fn expand_delete_prefix(&self, root_key: &[u8], key_prefix: &[u8]) -> Result<Vec<Vec<u8>>, Self::Error> {
-        self.find_keys_by_prefix_internal(root_key, key_prefix.to_vec()).await
+    async fn expand_delete_prefix(
+        &self,
+        root_key: &[u8],
+        key_prefix: &[u8],
+    ) -> Result<Vec<Vec<u8>>, Self::Error> {
+        self.find_keys_by_prefix_internal(root_key, key_prefix.to_vec())
+            .await
     }
 }
 
@@ -786,7 +811,11 @@ impl ReadableKeyValueStore<ScyllaDbStoreError> for ScyllaDbStore {
         self.store.max_stream_queries()
     }
 
-    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, ScyllaDbStoreError> {
+    async fn read_value_bytes(
+        &self,
+        root_key: &[u8],
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>, ScyllaDbStoreError> {
         self.store.read_value_bytes(root_key, key).await
     }
 
@@ -794,7 +823,11 @@ impl ReadableKeyValueStore<ScyllaDbStoreError> for ScyllaDbStore {
         self.store.contains_key(root_key, key).await
     }
 
-    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, ScyllaDbStoreError> {
+    async fn contains_keys(
+        &self,
+        root_key: &[u8],
+        keys: Vec<Vec<u8>>,
+    ) -> Result<Vec<bool>, ScyllaDbStoreError> {
         self.store.contains_keys(root_key, keys).await
     }
 
@@ -822,7 +855,9 @@ impl ReadableKeyValueStore<ScyllaDbStoreError> for ScyllaDbStore {
         root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, ScyllaDbStoreError> {
-        self.store.find_key_values_by_prefix(root_key, key_prefix).await
+        self.store
+            .find_key_values_by_prefix(root_key, key_prefix)
+            .await
     }
 }
 

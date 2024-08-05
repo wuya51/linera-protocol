@@ -14,8 +14,8 @@ use crate::test_utils::generate_test_namespace;
 use crate::{
     batch::{Batch, DeletePrefixExpander, WriteOperation},
     common::{
-        get_big_key, get_interval, AdminKeyValueStore, CommonStoreConfig, Context, ContextFromStore,
-        KeyIterable, KeyValueStore, ReadableKeyValueStore, WritableKeyValueStore,
+        get_big_key, get_interval, AdminKeyValueStore, CommonStoreConfig, Context,
+        ContextFromStore, KeyIterable, KeyValueStore, ReadableKeyValueStore, WritableKeyValueStore,
     },
     value_splitting::DatabaseConsistencyError,
     views::ViewError,
@@ -87,7 +87,11 @@ impl ReadableKeyValueStore<MemoryStoreError> for MemoryStore {
         self.max_stream_queries
     }
 
-    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, MemoryStoreError> {
+    async fn read_value_bytes(
+        &self,
+        root_key: &[u8],
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>, MemoryStoreError> {
         let map = self
             .map
             .read()
@@ -105,18 +109,22 @@ impl ReadableKeyValueStore<MemoryStoreError> for MemoryStore {
         Ok(map.contains_key(&big_key))
     }
 
-    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, MemoryStoreError> {
+    async fn contains_keys(
+        &self,
+        root_key: &[u8],
+        keys: Vec<Vec<u8>>,
+    ) -> Result<Vec<bool>, MemoryStoreError> {
         let map = self
             .map
             .read()
             .expect("MemoryStore lock should not be poisoned");
         Ok(keys
-           .into_iter()
-           .map(|key| {
-               let big_key = get_big_key(root_key, &key);
-               map.contains_key(&big_key)
-           })
-           .collect::<Vec<_>>())
+            .into_iter()
+            .map(|key| {
+                let big_key = get_big_key(root_key, &key);
+                map.contains_key(&big_key)
+            })
+            .collect::<Vec<_>>())
     }
 
     async fn read_multi_values_bytes(
@@ -435,7 +443,11 @@ impl From<MemoryStoreError> for ViewError {
 impl DeletePrefixExpander for MemoryContext<()> {
     type Error = MemoryStoreError;
 
-    async fn expand_delete_prefix(&self, _root_key: &[u8], key_prefix: &[u8]) -> Result<Vec<Vec<u8>>, Self::Error> {
+    async fn expand_delete_prefix(
+        &self,
+        _root_key: &[u8],
+        key_prefix: &[u8],
+    ) -> Result<Vec<Vec<u8>>, Self::Error> {
         let mut vector_list = Vec::new();
         for key in <Vec<Vec<u8>> as KeyIterable<Self::Error>>::iterator(
             &self.find_keys_by_prefix(key_prefix).await?,

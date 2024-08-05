@@ -23,7 +23,9 @@ use {
 
 use crate::{
     batch::{Batch, WriteOperation},
-    common::{get_big_key, get_interval, KeyValueStore, ReadableKeyValueStore, WritableKeyValueStore},
+    common::{
+        get_big_key, get_interval, KeyValueStore, ReadableKeyValueStore, WritableKeyValueStore,
+    },
 };
 
 #[cfg(with_metrics)]
@@ -121,7 +123,11 @@ where
         self.store.max_stream_queries()
     }
 
-    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, K::Error> {
+    async fn read_value_bytes(
+        &self,
+        root_key: &[u8],
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>, K::Error> {
         let Some(lru_read_values) = &self.lru_read_values else {
             return self.store.read_value_bytes(root_key, key).await;
         };
@@ -155,7 +161,11 @@ where
         self.store.contains_key(root_key, key).await
     }
 
-    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, K::Error> {
+    async fn contains_keys(
+        &self,
+        root_key: &[u8],
+        keys: Vec<Vec<u8>>,
+    ) -> Result<Vec<bool>, K::Error> {
         let Some(values) = &self.lru_read_values else {
             return self.store.contains_keys(root_key, keys).await;
         };
@@ -227,7 +237,11 @@ where
         Ok(result)
     }
 
-    async fn find_keys_by_prefix(&self, root_key: &[u8], key_prefix: &[u8]) -> Result<Self::Keys, K::Error> {
+    async fn find_keys_by_prefix(
+        &self,
+        root_key: &[u8],
+        key_prefix: &[u8],
+    ) -> Result<Self::Keys, K::Error> {
         self.store.find_keys_by_prefix(root_key, key_prefix).await
     }
 
@@ -236,7 +250,9 @@ where
         root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, K::Error> {
-        self.store.find_key_values_by_prefix(root_key, key_prefix).await
+        self.store
+            .find_key_values_by_prefix(root_key, key_prefix)
+            .await
     }
 }
 

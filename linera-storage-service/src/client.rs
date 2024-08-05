@@ -71,7 +71,11 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClientInternal {
         self.max_stream_queries
     }
 
-    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, ServiceStoreError> {
+    async fn read_value_bytes(
+        &self,
+        root_key: &[u8],
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>, ServiceStoreError> {
         ensure!(key.len() <= MAX_KEY_SIZE, ServiceStoreError::KeyTooLong);
         let mut full_key = self.namespace.clone();
         full_key.extend(root_key);
@@ -109,7 +113,11 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClientInternal {
         Ok(test)
     }
 
-    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, ServiceStoreError> {
+    async fn contains_keys(
+        &self,
+        root_key: &[u8],
+        keys: Vec<Vec<u8>>,
+    ) -> Result<Vec<bool>, ServiceStoreError> {
         let mut full_keys = Vec::new();
         for key in keys {
             ensure!(key.len() <= MAX_KEY_SIZE, ServiceStoreError::KeyTooLong);
@@ -524,7 +532,11 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClient {
         self.store.max_stream_queries()
     }
 
-    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, ServiceStoreError> {
+    async fn read_value_bytes(
+        &self,
+        root_key: &[u8],
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>, ServiceStoreError> {
         self.store.read_value_bytes(root_key, key).await
     }
 
@@ -532,7 +544,11 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClient {
         self.store.contains_key(root_key, key).await
     }
 
-    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, ServiceStoreError> {
+    async fn contains_keys(
+        &self,
+        root_key: &[u8],
+        keys: Vec<Vec<u8>>,
+    ) -> Result<Vec<bool>, ServiceStoreError> {
         self.store.contains_keys(root_key, keys).await
     }
 
@@ -557,7 +573,9 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClient {
         root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, ServiceStoreError> {
-        self.store.find_key_values_by_prefix(root_key, key_prefix).await
+        self.store
+            .find_key_values_by_prefix(root_key, key_prefix)
+            .await
     }
 }
 

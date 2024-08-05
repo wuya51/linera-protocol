@@ -207,7 +207,11 @@ fn build_key(root_key: &[u8], key: Vec<u8>) -> HashMap<String, AttributeValue> {
 }
 
 /// Builds the value attribute for storing a table item.
-fn build_key_value(root_key: &[u8], key: Vec<u8>, value: Vec<u8>) -> HashMap<String, AttributeValue> {
+fn build_key_value(
+    root_key: &[u8],
+    key: Vec<u8>,
+    value: Vec<u8>,
+) -> HashMap<String, AttributeValue> {
     let mut big_root = Vec::new();
     big_root.extend(root_key);
     [
@@ -295,7 +299,10 @@ impl TransactionBuilder {
     fn new(root_key: &[u8]) -> Self {
         let root_key = root_key.to_vec();
         let transacts = Vec::new();
-        Self { root_key, transacts }
+        Self {
+            root_key,
+            transacts,
+        }
     }
 
     fn insert_delete_request(
@@ -504,7 +511,11 @@ impl DynamoDbStoreInternal {
         Ok(())
     }
 
-    fn build_delete_transact(&self, root_key: &[u8], key: Vec<u8>) -> Result<TransactWriteItem, DynamoDbStoreError> {
+    fn build_delete_transact(
+        &self,
+        root_key: &[u8],
+        key: Vec<u8>,
+    ) -> Result<TransactWriteItem, DynamoDbStoreError> {
         ensure!(!key.is_empty(), DynamoDbStoreError::ZeroLengthKey);
         ensure!(key.len() <= MAX_KEY_SIZE, DynamoDbStoreError::KeyTooLong);
         let request = Delete::builder()
@@ -557,10 +568,7 @@ impl DynamoDbStoreInternal {
             .key_condition_expression(format!(
                 "{PARTITION_ATTRIBUTE} = :partition and begins_with({KEY_ATTRIBUTE}, :prefix)"
             ))
-            .expression_attribute_values(
-                ":partition",
-                AttributeValue::B(Blob::new(root_key)),
-            )
+            .expression_attribute_values(":partition", AttributeValue::B(Blob::new(root_key)))
             .expression_attribute_values(":prefix", AttributeValue::B(Blob::new(key_prefix)))
             .set_exclusive_start_key(start_key_map)
             .send()
@@ -820,7 +828,11 @@ impl ReadableKeyValueStore<DynamoDbStoreError> for DynamoDbStoreInternal {
         self.max_stream_queries
     }
 
-    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, DynamoDbStoreError> {
+    async fn read_value_bytes(
+        &self,
+        root_key: &[u8],
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>, DynamoDbStoreError> {
         ensure!(key.len() <= MAX_KEY_SIZE, DynamoDbStoreError::KeyTooLong);
         let key_db = build_key(root_key, key.to_vec());
         self.read_value_bytes_general(key_db).await
@@ -832,7 +844,11 @@ impl ReadableKeyValueStore<DynamoDbStoreError> for DynamoDbStoreInternal {
         self.contains_key_general(key_db).await
     }
 
-    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, DynamoDbStoreError> {
+    async fn contains_keys(
+        &self,
+        root_key: &[u8],
+        keys: Vec<Vec<u8>>,
+    ) -> Result<Vec<bool>, DynamoDbStoreError> {
         let mut handles = Vec::new();
         for key in keys {
             ensure!(key.len() <= MAX_KEY_SIZE, DynamoDbStoreError::KeyTooLong);
@@ -869,7 +885,9 @@ impl ReadableKeyValueStore<DynamoDbStoreError> for DynamoDbStoreInternal {
         root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<DynamoDbKeys, DynamoDbStoreError> {
-        let result_queries = self.get_list_responses(KEY_ATTRIBUTE, root_key, key_prefix).await?;
+        let result_queries = self
+            .get_list_responses(KEY_ATTRIBUTE, root_key, key_prefix)
+            .await?;
         Ok(DynamoDbKeys { result_queries })
     }
 
@@ -894,7 +912,11 @@ impl DirectWritableKeyValueStore<DynamoDbStoreError> for DynamoDbStoreInternal {
     // DynamoDB does not support the `DeletePrefix` operation.
     type Batch = SimpleUnorderedBatch;
 
-    async fn write_batch(&self, root_key: &[u8], batch: Self::Batch) -> Result<(), DynamoDbStoreError> {
+    async fn write_batch(
+        &self,
+        root_key: &[u8],
+        batch: Self::Batch,
+    ) -> Result<(), DynamoDbStoreError> {
         let mut builder = TransactionBuilder::new(root_key);
         for key in batch.deletions {
             builder.insert_delete_request(key, self)?;
@@ -944,7 +966,11 @@ impl ReadableKeyValueStore<DynamoDbStoreError> for DynamoDbStore {
         self.store.max_stream_queries()
     }
 
-    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, DynamoDbStoreError> {
+    async fn read_value_bytes(
+        &self,
+        root_key: &[u8],
+        key: &[u8],
+    ) -> Result<Option<Vec<u8>>, DynamoDbStoreError> {
         self.store.read_value_bytes(root_key, key).await
     }
 
@@ -952,7 +978,11 @@ impl ReadableKeyValueStore<DynamoDbStoreError> for DynamoDbStore {
         self.store.contains_key(root_key, key).await
     }
 
-    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, DynamoDbStoreError> {
+    async fn contains_keys(
+        &self,
+        root_key: &[u8],
+        keys: Vec<Vec<u8>>,
+    ) -> Result<Vec<bool>, DynamoDbStoreError> {
         self.store.contains_keys(root_key, keys).await
     }
 
@@ -977,7 +1007,9 @@ impl ReadableKeyValueStore<DynamoDbStoreError> for DynamoDbStore {
         root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, DynamoDbStoreError> {
-        self.store.find_key_values_by_prefix(root_key, key_prefix).await
+        self.store
+            .find_key_values_by_prefix(root_key, key_prefix)
+            .await
     }
 }
 
