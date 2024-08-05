@@ -314,7 +314,7 @@ pub type LruCachingMemoryContext<E> = ContextFromStore<E, LruCachingStore<Memory
 #[cfg(with_testing)]
 impl<E> LruCachingMemoryContext<E> {
     /// Creates a [`crate::key_value_store_view::KeyValueStoreMemoryContext`].
-    pub async fn new(base_key: Vec<u8>, extra: E, n: usize) -> Result<Self, ViewError> {
+    pub async fn new(root_key: Vec<u8>, extra: E, n: usize) -> Result<Self, ViewError> {
         let common_config = CommonStoreConfig {
             max_concurrent_queries: None,
             max_stream_queries: TEST_MEMORY_MAX_STREAM_QUERIES,
@@ -326,8 +326,10 @@ impl<E> LruCachingMemoryContext<E> {
             .await
             .expect("store");
         let store = LruCachingStore::new(store, n);
+        let base_key = Vec::new();
         Ok(Self {
             store,
+            root_key,
             base_key,
             extra,
         })

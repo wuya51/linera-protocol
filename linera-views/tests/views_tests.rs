@@ -24,7 +24,7 @@ use linera_views::{
     register_view::HashedRegisterView,
     set_view::HashedSetView,
     test_utils::{
-        self, get_random_byte_vector, get_random_key_value_operations, get_random_key_values,
+        self, get_random_key_prefix, get_random_byte_vector, get_random_key_value_operations, get_random_key_values,
         random_shuffle, span_random_reordering_put_delete,
     },
     views::{CryptoHashRootView, HashableView, Hasher, RootView, View, ViewError},
@@ -77,6 +77,7 @@ pub trait StateStore {
 pub struct MemoryTestStore {
     accessed_chains: BTreeSet<usize>,
     store: MemoryStore,
+    root_key: Vec<u8>,
 }
 
 #[async_trait]
@@ -85,9 +86,11 @@ impl StateStore for MemoryTestStore {
 
     async fn new() -> Self {
         let store = create_test_memory_store();
+        let root_key = get_random_key_prefix();
         MemoryTestStore {
             accessed_chains: BTreeSet::new(),
             store,
+            root_key,
         }
     }
 
@@ -97,8 +100,10 @@ impl StateStore for MemoryTestStore {
         tracing::trace!("Acquiring lock on {:?}", id);
         let base_key = bcs::to_bytes(&id)?;
         let store = self.store.clone();
+        let root_key = self.root_key.clone();
         let context = MemoryContext {
             store,
+            root_key,
             base_key,
             extra: id,
         };
@@ -109,6 +114,7 @@ impl StateStore for MemoryTestStore {
 pub struct KeyValueStoreTestStore {
     accessed_chains: BTreeSet<usize>,
     store: ViewContainer<MemoryContext<()>>,
+    root_key: Vec<u8>,
 }
 
 #[async_trait]
@@ -119,13 +125,16 @@ impl StateStore for KeyValueStoreTestStore {
         let store = create_test_memory_store();
         let context = MemoryContext {
             store,
+            root_key: get_random_key_prefix(),
             base_key: Vec::new(),
             extra: (),
         };
         let store = ViewContainer::new(context).await.unwrap();
+        let root_key = get_random_key_prefix();
         KeyValueStoreTestStore {
             accessed_chains: BTreeSet::new(),
             store,
+            root_key,
         }
     }
 
@@ -135,8 +144,10 @@ impl StateStore for KeyValueStoreTestStore {
         tracing::trace!("Acquiring lock on {:?}", id);
         let base_key = bcs::to_bytes(&id)?;
         let store = self.store.clone();
+        let root_key = self.root_key.clone();
         let context = KeyValueStoreMemoryContext {
             store,
+            root_key,
             base_key,
             extra: id,
         };
@@ -147,6 +158,7 @@ impl StateStore for KeyValueStoreTestStore {
 pub struct LruMemoryStore {
     accessed_chains: BTreeSet<usize>,
     store: LruCachingStore<MemoryStore>,
+    root_key: Vec<u8>,
 }
 
 #[async_trait]
@@ -157,9 +169,11 @@ impl StateStore for LruMemoryStore {
         let store = create_test_memory_store();
         let n = 1000;
         let store = LruCachingStore::new(store, n);
+        let root_key = get_random_key_prefix();
         LruMemoryStore {
             accessed_chains: BTreeSet::new(),
             store,
+            root_key,
         }
     }
 
@@ -169,8 +183,10 @@ impl StateStore for LruMemoryStore {
         tracing::trace!("Acquiring lock on {:?}", id);
         let base_key = bcs::to_bytes(&id)?;
         let store = self.store.clone();
+        let root_key = self.root_key.clone();
         let context = LruCachingMemoryContext {
             store,
+            root_key,
             base_key,
             extra: id,
         };
@@ -204,8 +220,8 @@ impl StateStore for RocksDbTestStore {
         self.accessed_chains.insert(id);
         // TODO(#643): Actually acquire a lock.
         tracing::trace!("Acquiring lock on {:?}", id);
-        let base_key = bcs::to_bytes(&id)?;
-        let context = RocksDbContext::new(self.store.clone(), base_key, id);
+        let root_key = bcs::to_bytes(&id)?;
+        let context = RocksDbContext::new(self.store.clone(), root_key, id);
         StateView::load(context).await
     }
 }
@@ -234,8 +250,8 @@ impl StateStore for ScyllaDbTestStore {
         self.accessed_chains.insert(id);
         // TODO(#643): Actually acquire a lock.
         tracing::trace!("Acquiring lock on {:?}", id);
-        let base_key = bcs::to_bytes(&id)?;
-        let context = ScyllaDbContext::new(self.store.clone(), base_key, id);
+        let root_key = bcs::to_bytes(&id)?;
+        let context = ScyllaDbContext::new(self.store.clone(), root_key, id);
         StateView::load(context).await
     }
 }
@@ -273,7 +289,7 @@ impl StateStore for DynamoDbTestStore {
         self.accessed_chains.insert(id);
         // TODO(#643): Actually acquire a lock.
         tracing::trace!("Acquiring lock on {:?}", id);
-        let base_key = bcs::to_bytes(&id)?;
+        let root_key = bcs::to_bytes(&id)?;
         let store_config = DynamoDbStoreConfig {
             config: self.localstack.dynamo_db_config(),
             common_config: self.common_config.clone(),
@@ -289,7 +305,7 @@ impl StateStore for DynamoDbTestStore {
                 .await
                 .expect("failed to create from scratch")
         };
-        let context = DynamoDbContext::new(store, base_key, id);
+        let context = DynamoDbContext::new(store, root_key, id);
         self.is_created = true;
         StateView::load(context).await
     }

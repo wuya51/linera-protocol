@@ -712,6 +712,7 @@ mod tests {
     #[tokio::test]
     async fn test_simplify_batch6() {
         let context = create_test_memory_context();
+        let root_key = context.root_key();
         let insertions = vec![(vec![1, 2, 3], vec![])];
         let simple_unordered_batch = SimpleUnorderedBatch {
             insertions: insertions.clone(),
@@ -723,7 +724,7 @@ mod tests {
             key_prefix_deletions,
         };
         unordered_batch
-            .expand_colliding_prefix_deletions(&context)
+            .expand_colliding_prefix_deletions(&root_key, &context)
             .await
             .unwrap();
         assert!(unordered_batch.simple_unordered_batch.deletions.is_empty());

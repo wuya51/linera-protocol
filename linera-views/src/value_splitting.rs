@@ -368,34 +368,36 @@ impl ReadableKeyValueStore<MemoryStoreError> for LimitedTestMemoryStore {
         TEST_MEMORY_MAX_STREAM_QUERIES
     }
 
-    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, MemoryStoreError> {
-        self.store.read_value_bytes(key).await
+    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, MemoryStoreError> {
+        self.store.read_value_bytes(root_key, key).await
     }
 
-    async fn contains_key(&self, key: &[u8]) -> Result<bool, MemoryStoreError> {
-        self.store.contains_key(key).await
+    async fn contains_key(&self, root_key: &[u8], key: &[u8]) -> Result<bool, MemoryStoreError> {
+        self.store.contains_key(root_key, key).await
     }
 
-    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, MemoryStoreError> {
-        self.store.contains_keys(keys).await
+    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, MemoryStoreError> {
+        self.store.contains_keys(root_key, keys).await
     }
 
     async fn read_multi_values_bytes(
         &self,
+        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<Option<Vec<u8>>>, MemoryStoreError> {
-        self.store.read_multi_values_bytes(keys).await
+        self.store.read_multi_values_bytes(root_key, keys).await
     }
 
-    async fn find_keys_by_prefix(&self, key_prefix: &[u8]) -> Result<Self::Keys, MemoryStoreError> {
-        self.store.find_keys_by_prefix(key_prefix).await
+    async fn find_keys_by_prefix(&self, root_key: &[u8], key_prefix: &[u8]) -> Result<Self::Keys, MemoryStoreError> {
+        self.store.find_keys_by_prefix(root_key, key_prefix).await
     }
 
     async fn find_key_values_by_prefix(
         &self,
+        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, MemoryStoreError> {
-        self.store.find_key_values_by_prefix(key_prefix).await
+        self.store.find_key_values_by_prefix(root_key, key_prefix).await
     }
 }
 
@@ -405,16 +407,16 @@ impl WritableKeyValueStore<MemoryStoreError> for LimitedTestMemoryStore {
     // purely for testing purposes.
     const MAX_VALUE_SIZE: usize = 100;
 
-    async fn write_batch(&self, batch: Batch, base_key: &[u8]) -> Result<(), MemoryStoreError> {
+    async fn write_batch(&self, root_key: &[u8], batch: Batch) -> Result<(), MemoryStoreError> {
         ensure!(
             batch.check_value_size(Self::MAX_VALUE_SIZE),
             MemoryStoreError::TooLargeValue
         );
-        self.store.write_batch(batch, base_key).await
+        self.store.write_batch(root_key, batch).await
     }
 
-    async fn clear_journal(&self, base_key: &[u8]) -> Result<(), MemoryStoreError> {
-        self.store.clear_journal(base_key).await
+    async fn clear_journal(&self, root_key: &[u8]) -> Result<(), MemoryStoreError> {
+        self.store.clear_journal(root_key).await
     }
 }
 
@@ -458,23 +460,24 @@ mod tests {
         const MAX_LEN: usize = LimitedTestMemoryStore::MAX_VALUE_SIZE;
         assert!(MAX_LEN > 10);
         let big_store = ValueSplittingStore::new(store.clone());
+        let root_key = vec![42, 43, 23];
         let key = vec![0, 0];
         // Write a key with a long value
         let mut batch = Batch::new();
         let value = Vec::from([0; MAX_LEN + 1]);
         batch.put_key_value_bytes(key.clone(), value.clone());
-        big_store.write_batch(batch, &[]).await.unwrap();
-        let value_read = big_store.read_value_bytes(&key).await.unwrap();
+        big_store.write_batch(&root_key, batch).await.unwrap();
+        let value_read = big_store.read_value_bytes(&root_key, &key).await.unwrap();
         assert_eq!(value_read, Some(value));
         // Write a key with a smaller value
         let mut batch = Batch::new();
         let value = Vec::from([0, 1]);
         batch.put_key_value_bytes(key.clone(), value.clone());
-        big_store.write_batch(batch, &[]).await.unwrap();
-        let value_read = big_store.read_value_bytes(&key).await.unwrap();
+        big_store.write_batch(&root_key, batch).await.unwrap();
+        let value_read = big_store.read_value_bytes(&root_key, &key).await.unwrap();
         assert_eq!(value_read, Some(value));
         // Two segments are present even though only one is used
-        let keys = store.find_keys_by_prefix(&[0]).await.unwrap();
+        let keys = store.find_keys_by_prefix(&root_key, &[0]).await.unwrap();
         assert_eq!(keys, vec![vec![0, 0, 0, 0, 0], vec![0, 0, 0, 0, 1]]);
     }
 
@@ -483,6 +486,7 @@ mod tests {
         let store = LimitedTestMemoryStore::new();
         const MAX_LEN: usize = LimitedTestMemoryStore::MAX_VALUE_SIZE;
         let big_store = ValueSplittingStore::new(store.clone());
+        let root_key = vec![42, 43, 23];
         let key = vec![0, 0];
         // Writing a big value
         let mut batch = Batch::new();
@@ -492,8 +496,8 @@ mod tests {
             value.push(rng.gen::<u8>());
         }
         batch.put_key_value_bytes(key.clone(), value.clone());
-        big_store.write_batch(batch, &[]).await.unwrap();
-        let value_read = big_store.read_value_bytes(&key).await.unwrap();
+        big_store.write_batch(&root_key, batch).await.unwrap();
+        let value_read = big_store.read_value_bytes(&root_key, &key).await.unwrap();
         assert_eq!(value_read, Some(value.clone()));
         // Reading the segments and checking
         let mut value_concat = Vec::<u8>::new();
@@ -502,7 +506,7 @@ mod tests {
             let mut bytes = bcs::to_bytes(&index).unwrap();
             bytes.reverse();
             segment_key.extend(bytes);
-            let value_read = store.read_value_bytes(&segment_key).await.unwrap();
+            let value_read = store.read_value_bytes(&root_key, &segment_key).await.unwrap();
             let Some(value_read) = value_read else {
                 unreachable!()
             };
@@ -520,6 +524,7 @@ mod tests {
         let store = LimitedTestMemoryStore::new();
         const MAX_LEN: usize = LimitedTestMemoryStore::MAX_VALUE_SIZE;
         let big_store = ValueSplittingStore::new(store.clone());
+        let root_key = vec![42, 43, 23];
         let key = vec![0, 0];
         // writing a big key
         let mut batch = Batch::new();
@@ -529,16 +534,16 @@ mod tests {
             value.push(rng.gen::<u8>());
         }
         batch.put_key_value_bytes(key.clone(), value.clone());
-        big_store.write_batch(batch, &[]).await.unwrap();
+        big_store.write_batch(&root_key, batch).await.unwrap();
         // deleting it
         let mut batch = Batch::new();
         batch.delete_key(key.clone());
-        big_store.write_batch(batch, &[]).await.unwrap();
+        big_store.write_batch(&root_key, batch).await.unwrap();
         // reading everything (there are leftover keys)
-        let key_values = big_store.find_key_values_by_prefix(&[0]).await.unwrap();
+        let key_values = big_store.find_key_values_by_prefix(&root_key, &[0]).await.unwrap();
         assert_eq!(key_values.len(), 0);
         // Two segments remain
-        let keys = store.find_keys_by_prefix(&[0]).await.unwrap();
+        let keys = store.find_keys_by_prefix(&root_key, &[0]).await.unwrap();
         assert_eq!(keys, vec![vec![0, 0, 0, 0, 1], vec![0, 0, 0, 0, 2]]);
     }
 }
