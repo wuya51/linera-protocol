@@ -993,7 +993,8 @@ pub async fn create_scylla_db_test_config() -> ScyllaDbStoreConfig {
 pub async fn create_scylla_db_test_store() -> ScyllaDbStore {
     let config = create_scylla_db_test_config().await;
     let namespace = generate_test_namespace();
-    ScyllaDbStore::recreate_and_connect(&config, &namespace)
+    let root_key = &[];
+    ScyllaDbStore::recreate_and_connect(&config, &namespace, root_key)
         .await
         .expect("store")
 }
