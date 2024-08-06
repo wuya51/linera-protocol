@@ -1366,7 +1366,8 @@ pub async fn create_dynamo_db_test_config() -> DynamoDbStoreConfig {
 pub async fn create_dynamo_db_test_store() -> DynamoDbStore {
     let store_config = create_dynamo_db_test_config().await;
     let namespace = generate_test_namespace();
-    DynamoDbStore::recreate_and_connect(&store_config, &namespace)
+    let root_key = &[];
+    DynamoDbStore::recreate_and_connect(&store_config, &namespace, root_key)
         .await
         .expect("key_value_store")
 }

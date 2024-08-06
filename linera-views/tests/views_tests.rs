@@ -32,7 +32,6 @@ use linera_views::{
 use linera_views::common::{AdminKeyValueStore as _};
 #[cfg(with_dynamodb)]
 use linera_views::{
-    common::{CommonStoreConfig},
     dynamo_db::{
         create_dynamo_db_common_config, DynamoDbContext, DynamoDbStore, DynamoDbStoreConfig,
         LocalStackTestContext,
@@ -264,7 +263,7 @@ impl StateStore for DynamoDbTestStore {
             common_config,
         };
         let root_key = &[];
-        let store = DynamoDbStore::recreate_and_connect(&store_config, namespace, root_key)
+        let store = DynamoDbStore::recreate_and_connect(&store_config, &namespace, root_key)
             .await
             .expect("failed to create from scratch");
         DynamoDbTestStore {
