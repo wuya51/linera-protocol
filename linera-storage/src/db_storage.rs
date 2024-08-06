@@ -205,9 +205,6 @@ pub static LOAD_CHAIN_LATENCY: LazyLock<HistogramVec> = LazyLock::new(|| {
     .expect("Histogram creation should not fail")
 });
 
-/// A root-key being used during operations.
-const ROOT_KEY: &[u8] = &[];
-
 /// A storage implemented from a [`KeyValueStore`]
 pub struct DbStorageInner<Client> {
     client: Client,
@@ -241,9 +238,10 @@ where
     pub async fn new_for_testing(
         store_config: Client::Config,
         namespace: &str,
+        root_key: &[u8],
         wasm_runtime: Option<WasmRuntime>,
     ) -> Result<Self, <Client as KeyValueStore>::Error> {
-        let client = Client::recreate_and_connect(&store_config, namespace).await?;
+        let client = Client::recreate_and_connect(&store_config, namespace, root_key).await?;
         let storage = Self::new(client, wasm_runtime);
         Ok(storage)
     }
@@ -251,9 +249,10 @@ where
     pub async fn initialize(
         store_config: Client::Config,
         namespace: &str,
+        root_key: &[u8],
         wasm_runtime: Option<WasmRuntime>,
     ) -> Result<Self, <Client as KeyValueStore>::Error> {
-        let store = Client::maybe_create_and_connect(&store_config, namespace).await?;
+        let store = Client::maybe_create_and_connect(&store_config, namespace, root_key).await?;
         let storage = Self::new(store, wasm_runtime);
         Ok(storage)
     }
@@ -261,9 +260,10 @@ where
     pub async fn make(
         store_config: Client::Config,
         namespace: &str,
+        root_key: &[u8],
         wasm_runtime: Option<WasmRuntime>,
     ) -> Result<Self, <Client as KeyValueStore>::Error> {
-        let client = Client::connect(&store_config, namespace).await?;
+        let client = Client::connect(&store_config, namespace, root_key).await?;
         let storage = Self::new(client, wasm_runtime);
         Ok(storage)
     }
@@ -409,7 +409,7 @@ impl TestClock {
 #[async_trait]
 impl<Client, C> Storage for DbStorage<Client, C>
 where
-    Client: KeyValueStore + Clone + Send + Sync + 'static,
+    Client: AdminKeyValueStore<Error = <Client as KeyValueStore>::Error> + KeyValueStore + Clone + Send + Sync + 'static,
     C: Clock + Clone + Send + Sync + 'static,
     ViewError: From<<Client as KeyValueStore>::Error>,
     <Client as KeyValueStore>::Error:
@@ -435,9 +435,9 @@ where
             user_contracts: self.client.user_contracts.clone(),
             user_services: self.client.user_services.clone(),
         };
-        let client = self.client.client.clone();
         let root_key = bcs::to_bytes(&BaseKey::ChainState(chain_id))?;
-        let context = ContextFromStore::create(client, root_key, runtime_context).await?;
+        let client = self.client.client.clone_with_root_key(&root_key)?;
+        let context = ContextFromStore::create(client, runtime_context).await?;
         ChainStateView::load(context).await
     }
 
@@ -446,7 +446,7 @@ where
         let test = self
             .client
             .client
-            .contains_key(ROOT_KEY, &value_key)
+            .contains_key(&value_key)
             .await?;
         #[cfg(with_metrics)]
         CONTAINS_HASHED_CERTIFICATE_VALUE_COUNTER
@@ -464,7 +464,7 @@ where
             let value_key = bcs::to_bytes(&BaseKey::CertificateValue(hash))?;
             keys.push(value_key);
         }
-        let test = self.client.client.contains_keys(ROOT_KEY, keys).await?;
+        let test = self.client.client.contains_keys(keys).await?;
         #[cfg(with_metrics)]
         CONTAINS_HASHED_CERTIFICATE_VALUES_COUNTER
             .with_label_values(&[])
@@ -474,7 +474,7 @@ where
 
     async fn contains_blob(&self, blob_id: BlobId) -> Result<bool, ViewError> {
         let blob_key = bcs::to_bytes(&BaseKey::Blob(blob_id))?;
-        let test = self.client.client.contains_key(ROOT_KEY, &blob_key).await?;
+        let test = self.client.client.contains_key(&blob_key).await?;
         #[cfg(with_metrics)]
         CONTAINS_BLOB_COUNTER.with_label_values(&[]).inc();
         Ok(test)
@@ -486,7 +486,7 @@ where
             let key = bcs::to_bytes(&BaseKey::Blob(blob_id))?;
             keys.push(key);
         }
-        let results = self.client.client.contains_keys(ROOT_KEY, keys).await?;
+        let results = self.client.client.contains_keys(keys).await?;
         let mut missing_blobs = Vec::new();
         for (blob_id, result) in blob_ids.into_iter().zip(results) {
             if !result {
@@ -500,7 +500,7 @@ where
 
     async fn contains_blob_state(&self, blob_id: BlobId) -> Result<bool, ViewError> {
         let blob_key = bcs::to_bytes(&BaseKey::BlobState(blob_id))?;
-        let test = self.client.client.contains_key(ROOT_KEY, &blob_key).await?;
+        let test = self.client.client.contains_key(&blob_key).await?;
         #[cfg(with_metrics)]
         CONTAINS_BLOB_STATE_COUNTER.with_label_values(&[]).inc();
         Ok(test)
@@ -514,7 +514,7 @@ where
         let maybe_value = self
             .client
             .client
-            .read_value::<CertificateValue>(ROOT_KEY, &value_key)
+            .read_value::<CertificateValue>(&value_key)
             .await?;
         #[cfg(with_metrics)]
         READ_HASHED_CERTIFICATE_VALUE_COUNTER
@@ -529,7 +529,7 @@ where
         let maybe_blob_content = self
             .client
             .client
-            .read_value::<BlobContent>(ROOT_KEY, &blob_key)
+            .read_value::<BlobContent>(&blob_key)
             .await?;
         #[cfg(with_metrics)]
         READ_BLOB_COUNTER.with_label_values(&[]).inc();
@@ -546,7 +546,7 @@ where
         let maybe_blob_contents = self
             .client
             .client
-            .read_multi_values::<BlobContent>(ROOT_KEY, blob_keys)
+            .read_multi_values::<BlobContent>(blob_keys)
             .await?;
         #[cfg(with_metrics)]
         READ_BLOB_COUNTER
@@ -567,7 +567,7 @@ where
         let maybe_blob_state = self
             .client
             .client
-            .read_value::<BlobState>(ROOT_KEY, &blob_state_key)
+            .read_value::<BlobState>(&blob_state_key)
             .await?;
         #[cfg(with_metrics)]
         READ_BLOB_STATE_COUNTER.with_label_values(&[]).inc();
@@ -686,7 +686,7 @@ where
         let cert_key = bcs::to_bytes(&BaseKey::Certificate(hash))?;
         let value_key = bcs::to_bytes(&BaseKey::CertificateValue(hash))?;
         let keys = vec![cert_key, value_key];
-        let results = self.client.client.contains_keys(ROOT_KEY, keys).await?;
+        let results = self.client.client.contains_keys(keys).await?;
         #[cfg(with_metrics)]
         CONTAINS_CERTIFICATE_COUNTER.with_label_values(&[]).inc();
         Ok(results[0] && results[1])
@@ -699,7 +699,7 @@ where
         let values = self
             .client
             .client
-            .read_multi_values_bytes(ROOT_KEY, keys)
+            .read_multi_values_bytes(keys)
             .await;
         if values.is_ok() {
             #[cfg(with_metrics)]
@@ -787,7 +787,7 @@ where
     }
 
     async fn write_batch(&self, batch: Batch) -> Result<(), ViewError> {
-        self.client.client.write_batch(ROOT_KEY, batch).await?;
+        self.client.client.write_batch(batch).await?;
         Ok(())
     }
 
@@ -815,19 +815,21 @@ where
     pub async fn initialize(
         store_config: Client::Config,
         namespace: &str,
+        root_key: &[u8],
         wasm_runtime: Option<WasmRuntime>,
     ) -> Result<Self, <Client as KeyValueStore>::Error> {
         let storage =
-            DbStorageInner::<Client>::initialize(store_config, namespace, wasm_runtime).await?;
+            DbStorageInner::<Client>::initialize(store_config, namespace, root_key, wasm_runtime).await?;
         Ok(Self::create(storage, WallClock))
     }
 
     pub async fn new(
         store_config: Client::Config,
         namespace: &str,
+        root_key: &[u8],
         wasm_runtime: Option<WasmRuntime>,
     ) -> Result<Self, <Client as KeyValueStore>::Error> {
-        let storage = DbStorageInner::<Client>::make(store_config, namespace, wasm_runtime).await?;
+        let storage = DbStorageInner::<Client>::make(store_config, namespace, root_key, wasm_runtime).await?;
         Ok(Self::create(storage, WallClock))
     }
 }
