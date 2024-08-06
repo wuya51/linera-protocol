@@ -90,7 +90,7 @@ impl ReadableKeyValueStore<ViewError> for KeyValueStore {
         1
     }
 
-    async fn contains_key(&self, _root_key: &[u8], key: &[u8]) -> Result<bool, ViewError> {
+    async fn contains_key(&self, key: &[u8]) -> Result<bool, ViewError> {
         ensure!(key.len() <= Self::MAX_KEY_SIZE, ViewError::KeyTooLong);
         let promise = self.wit_api.contains_key_new(key);
         yield_once().await;
@@ -99,7 +99,6 @@ impl ReadableKeyValueStore<ViewError> for KeyValueStore {
 
     async fn contains_keys(
         &self,
-        _root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<bool>, ViewError> {
         for key in &keys {
@@ -112,7 +111,6 @@ impl ReadableKeyValueStore<ViewError> for KeyValueStore {
 
     async fn read_multi_values_bytes(
         &self,
-        _root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<Option<Vec<u8>>>, ViewError> {
         for key in &keys {
@@ -125,7 +123,6 @@ impl ReadableKeyValueStore<ViewError> for KeyValueStore {
 
     async fn read_value_bytes(
         &self,
-        _root_key: &[u8],
         key: &[u8],
     ) -> Result<Option<Vec<u8>>, ViewError> {
         ensure!(key.len() <= Self::MAX_KEY_SIZE, ViewError::KeyTooLong);
@@ -136,7 +133,6 @@ impl ReadableKeyValueStore<ViewError> for KeyValueStore {
 
     async fn find_keys_by_prefix(
         &self,
-        _root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::Keys, ViewError> {
         ensure!(
@@ -150,7 +146,6 @@ impl ReadableKeyValueStore<ViewError> for KeyValueStore {
 
     async fn find_key_values_by_prefix(
         &self,
-        _root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, ViewError> {
         ensure!(
@@ -166,12 +161,12 @@ impl ReadableKeyValueStore<ViewError> for KeyValueStore {
 impl WritableKeyValueStore<ViewError> for KeyValueStore {
     const MAX_VALUE_SIZE: usize = usize::MAX;
 
-    async fn write_batch(&self, _root_key: &[u8], batch: Batch) -> Result<(), ViewError> {
+    async fn write_batch(&self, batch: Batch) -> Result<(), ViewError> {
         self.wit_api.write_batch(batch);
         Ok(())
     }
 
-    async fn clear_journal(&self, _root_key: &[u8]) -> Result<(), ViewError> {
+    async fn clear_journal(&self) -> Result<(), ViewError> {
         Ok(())
     }
 }
@@ -355,7 +350,6 @@ impl From<KeyValueStore> for ViewStorageContext {
     fn from(store: KeyValueStore) -> Self {
         ContextFromStore {
             store,
-            root_key: vec![],
             base_key: vec![],
             extra: (),
         }
