@@ -563,6 +563,13 @@ impl DirectWritableKeyValueStore<ScyllaDbStoreError> for ScyllaDbStoreInternal {
     }
 }
 
+// ScyllaDb requires that the keys are non-empty.
+fn get_big_root_key(root_key: &[u8]) -> Vec<u8> {
+    let mut big_key = vec![0];
+    big_key.extend(root_key);
+    big_key
+}
+
 impl AdminKeyValueStore for ScyllaDbStoreInternal {
     type Error = ScyllaDbStoreError;
     type Config = ScyllaDbStoreConfig;
@@ -586,7 +593,7 @@ impl AdminKeyValueStore for ScyllaDbStoreInternal {
             .map(|n| Arc::new(Semaphore::new(n)));
         let max_stream_queries = config.common_config.max_stream_queries;
         let cache_size = config.common_config.cache_size;
-        let root_key = root_key.to_vec();
+        let root_key = get_big_root_key(root_key);
         Ok(Self {
             store,
             semaphore,
@@ -601,7 +608,7 @@ impl AdminKeyValueStore for ScyllaDbStoreInternal {
         let semaphore = self.semaphore.clone();
         let max_stream_queries = self.max_stream_queries;
         let cache_size = self.cache_size;
-        let root_key = root_key.to_vec();
+        let root_key = get_big_root_key(root_key);
         Ok(Self {
             store,
             semaphore,
