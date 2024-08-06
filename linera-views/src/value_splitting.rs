@@ -62,12 +62,11 @@ where
 
     async fn read_value_bytes(
         &self,
-        root_key: &[u8],
         key: &[u8],
     ) -> Result<Option<Vec<u8>>, K::Error> {
         let mut big_key = key.to_vec();
         big_key.extend(&[0, 0, 0, 0]);
-        let value = self.store.read_value_bytes(root_key, &big_key).await?;
+        let value = self.store.read_value_bytes(&big_key).await?;
         let Some(value) = value else {
             return Ok(None);
         };
@@ -83,7 +82,7 @@ where
         }
         let segments = self
             .store
-            .read_multi_values_bytes(root_key, big_keys)
+            .read_multi_values_bytes(big_keys)
             .await?;
         for segment in segments {
             match segment {
@@ -98,15 +97,14 @@ where
         Ok(Some(big_value))
     }
 
-    async fn contains_key(&self, root_key: &[u8], key: &[u8]) -> Result<bool, K::Error> {
+    async fn contains_key(&self, key: &[u8]) -> Result<bool, K::Error> {
         let mut big_key = key.to_vec();
         big_key.extend(&[0, 0, 0, 0]);
-        self.store.contains_key(root_key, &big_key).await
+        self.store.contains_key(&big_key).await
     }
 
     async fn contains_keys(
         &self,
-        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<bool>, K::Error> {
         let big_keys = keys
@@ -117,12 +115,11 @@ where
                 big_key
             })
             .collect::<Vec<_>>();
-        self.store.contains_keys(root_key, big_keys).await
+        self.store.contains_keys(big_keys).await
     }
 
     async fn read_multi_values_bytes(
         &self,
-        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<Option<Vec<u8>>>, K::Error> {
         let mut big_keys = Vec::new();
@@ -133,7 +130,7 @@ where
         }
         let values = self
             .store
-            .read_multi_values_bytes(root_key, big_keys)
+            .read_multi_values_bytes(big_keys)
             .await?;
         let mut big_values = Vec::<Option<Vec<u8>>>::new();
         let mut keys_add = Vec::new();
@@ -159,7 +156,7 @@ where
         if !keys_add.is_empty() {
             let mut segments = self
                 .store
-                .read_multi_values_bytes(root_key, keys_add)
+                .read_multi_values_bytes(keys_add)
                 .await?
                 .into_iter();
             for (idx, count) in n_blocks.iter().enumerate() {
@@ -179,13 +176,12 @@ where
 
     async fn find_keys_by_prefix(
         &self,
-        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::Keys, K::Error> {
         let mut keys = Vec::new();
         for big_key in self
             .store
-            .find_keys_by_prefix(root_key, key_prefix)
+            .find_keys_by_prefix(key_prefix)
             .await?
             .iterator()
         {
@@ -201,12 +197,11 @@ where
 
     async fn find_key_values_by_prefix(
         &self,
-        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, K::Error> {
         let small_key_values = self
             .store
-            .find_key_values_by_prefix(root_key, key_prefix)
+            .find_key_values_by_prefix(key_prefix)
             .await?;
         let mut small_kv_iterator = small_key_values.into_iterator_owned();
         let mut key_values = Vec::new();
@@ -244,7 +239,7 @@ where
 {
     const MAX_VALUE_SIZE: usize = usize::MAX;
 
-    async fn write_batch(&self, root_key: &[u8], batch: Batch) -> Result<(), K::Error> {
+    async fn write_batch(&self, batch: Batch) -> Result<(), K::Error> {
         let mut batch_new = Batch::new();
         for operation in batch.operations {
             match operation {
@@ -274,11 +269,11 @@ where
                 }
             }
         }
-        self.store.write_batch(root_key, batch_new).await
+        self.store.write_batch(batch_new).await
     }
 
-    async fn clear_journal(&self, root_key: &[u8]) -> Result<(), K::Error> {
-        self.store.clear_journal(root_key).await
+    async fn clear_journal(&self) -> Result<(), K::Error> {
+        self.store.clear_journal().await
     }
 }
 
@@ -297,6 +292,10 @@ where
     fn clone_with_root_key(&self, root_key: &[u8]) -> Result<Self, Self::Error> {
         let store = self.store.clone_with_root_key(root_key)?;
         Ok(Self { store })
+    }
+
+    fn root_key(&self) -> &[u8] {
+        self.store.root_key()
     }
 
     async fn list_all(config: &Self::Config) -> Result<Vec<String>, Self::Error> {
@@ -401,47 +400,42 @@ impl ReadableKeyValueStore<MemoryStoreError> for LimitedTestMemoryStore {
 
     async fn read_value_bytes(
         &self,
-        root_key: &[u8],
         key: &[u8],
     ) -> Result<Option<Vec<u8>>, MemoryStoreError> {
-        self.store.read_value_bytes(root_key, key).await
+        self.store.read_value_bytes(key).await
     }
 
-    async fn contains_key(&self, root_key: &[u8], key: &[u8]) -> Result<bool, MemoryStoreError> {
-        self.store.contains_key(root_key, key).await
+    async fn contains_key(&self, key: &[u8]) -> Result<bool, MemoryStoreError> {
+        self.store.contains_key(key).await
     }
 
     async fn contains_keys(
         &self,
-        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<bool>, MemoryStoreError> {
-        self.store.contains_keys(root_key, keys).await
+        self.store.contains_keys(keys).await
     }
 
     async fn read_multi_values_bytes(
         &self,
-        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<Option<Vec<u8>>>, MemoryStoreError> {
-        self.store.read_multi_values_bytes(root_key, keys).await
+        self.store.read_multi_values_bytes(keys).await
     }
 
     async fn find_keys_by_prefix(
         &self,
-        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::Keys, MemoryStoreError> {
-        self.store.find_keys_by_prefix(root_key, key_prefix).await
+        self.store.find_keys_by_prefix(key_prefix).await
     }
 
     async fn find_key_values_by_prefix(
         &self,
-        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, MemoryStoreError> {
         self.store
-            .find_key_values_by_prefix(root_key, key_prefix)
+            .find_key_values_by_prefix(key_prefix)
             .await
     }
 }
@@ -452,16 +446,16 @@ impl WritableKeyValueStore<MemoryStoreError> for LimitedTestMemoryStore {
     // purely for testing purposes.
     const MAX_VALUE_SIZE: usize = 100;
 
-    async fn write_batch(&self, root_key: &[u8], batch: Batch) -> Result<(), MemoryStoreError> {
+    async fn write_batch(&self, batch: Batch) -> Result<(), MemoryStoreError> {
         ensure!(
             batch.check_value_size(Self::MAX_VALUE_SIZE),
             MemoryStoreError::TooLargeValue
         );
-        self.store.write_batch(root_key, batch).await
+        self.store.write_batch(batch).await
     }
 
-    async fn clear_journal(&self, root_key: &[u8]) -> Result<(), MemoryStoreError> {
-        self.store.clear_journal(root_key).await
+    async fn clear_journal(&self) -> Result<(), MemoryStoreError> {
+        self.store.clear_journal().await
     }
 }
 
@@ -475,8 +469,9 @@ impl LimitedTestMemoryStore {
     /// Creates a `LimitedTestMemoryStore`
     pub fn new() -> Self {
         let namespace = generate_test_namespace();
+        let root_key = &[];
         let store =
-            MemoryStore::new_for_testing(TEST_MEMORY_MAX_STREAM_QUERIES, &namespace).unwrap();
+            MemoryStore::new_for_testing(TEST_MEMORY_MAX_STREAM_QUERIES, &namespace, root_key).unwrap();
         LimitedTestMemoryStore { store }
     }
 }
@@ -505,24 +500,23 @@ mod tests {
         const MAX_LEN: usize = LimitedTestMemoryStore::MAX_VALUE_SIZE;
         assert!(MAX_LEN > 10);
         let big_store = ValueSplittingStore::new(store.clone());
-        let root_key = vec![42, 43, 23];
         let key = vec![0, 0];
         // Write a key with a long value
         let mut batch = Batch::new();
         let value = Vec::from([0; MAX_LEN + 1]);
         batch.put_key_value_bytes(key.clone(), value.clone());
-        big_store.write_batch(&root_key, batch).await.unwrap();
-        let value_read = big_store.read_value_bytes(&root_key, &key).await.unwrap();
+        big_store.write_batch(batch).await.unwrap();
+        let value_read = big_store.read_value_bytes(&key).await.unwrap();
         assert_eq!(value_read, Some(value));
         // Write a key with a smaller value
         let mut batch = Batch::new();
         let value = Vec::from([0, 1]);
         batch.put_key_value_bytes(key.clone(), value.clone());
-        big_store.write_batch(&root_key, batch).await.unwrap();
-        let value_read = big_store.read_value_bytes(&root_key, &key).await.unwrap();
+        big_store.write_batch(batch).await.unwrap();
+        let value_read = big_store.read_value_bytes(&key).await.unwrap();
         assert_eq!(value_read, Some(value));
         // Two segments are present even though only one is used
-        let keys = store.find_keys_by_prefix(&root_key, &[0]).await.unwrap();
+        let keys = store.find_keys_by_prefix(&[0]).await.unwrap();
         assert_eq!(keys, vec![vec![0, 0, 0, 0, 0], vec![0, 0, 0, 0, 1]]);
     }
 
@@ -531,7 +525,6 @@ mod tests {
         let store = LimitedTestMemoryStore::new();
         const MAX_LEN: usize = LimitedTestMemoryStore::MAX_VALUE_SIZE;
         let big_store = ValueSplittingStore::new(store.clone());
-        let root_key = vec![42, 43, 23];
         let key = vec![0, 0];
         // Writing a big value
         let mut batch = Batch::new();
@@ -541,8 +534,8 @@ mod tests {
             value.push(rng.gen::<u8>());
         }
         batch.put_key_value_bytes(key.clone(), value.clone());
-        big_store.write_batch(&root_key, batch).await.unwrap();
-        let value_read = big_store.read_value_bytes(&root_key, &key).await.unwrap();
+        big_store.write_batch(batch).await.unwrap();
+        let value_read = big_store.read_value_bytes(&key).await.unwrap();
         assert_eq!(value_read, Some(value.clone()));
         // Reading the segments and checking
         let mut value_concat = Vec::<u8>::new();
@@ -552,7 +545,7 @@ mod tests {
             bytes.reverse();
             segment_key.extend(bytes);
             let value_read = store
-                .read_value_bytes(&root_key, &segment_key)
+                .read_value_bytes(&&segment_key)
                 .await
                 .unwrap();
             let Some(value_read) = value_read else {
@@ -572,7 +565,6 @@ mod tests {
         let store = LimitedTestMemoryStore::new();
         const MAX_LEN: usize = LimitedTestMemoryStore::MAX_VALUE_SIZE;
         let big_store = ValueSplittingStore::new(store.clone());
-        let root_key = vec![42, 43, 23];
         let key = vec![0, 0];
         // writing a big key
         let mut batch = Batch::new();
@@ -582,19 +574,19 @@ mod tests {
             value.push(rng.gen::<u8>());
         }
         batch.put_key_value_bytes(key.clone(), value.clone());
-        big_store.write_batch(&root_key, batch).await.unwrap();
+        big_store.write_batch(batch).await.unwrap();
         // deleting it
         let mut batch = Batch::new();
         batch.delete_key(key.clone());
-        big_store.write_batch(&root_key, batch).await.unwrap();
+        big_store.write_batch(batch).await.unwrap();
         // reading everything (there are leftover keys)
         let key_values = big_store
-            .find_key_values_by_prefix(&root_key, &[0])
+            .find_key_values_by_prefix(&[0])
             .await
             .unwrap();
         assert_eq!(key_values.len(), 0);
         // Two segments remain
-        let keys = store.find_keys_by_prefix(&root_key, &[0]).await.unwrap();
+        let keys = store.find_keys_by_prefix(&[0]).await.unwrap();
         assert_eq!(keys, vec![vec![0, 0, 0, 0, 1], vec![0, 0, 0, 0, 2]]);
     }
 }

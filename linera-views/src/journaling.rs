@@ -77,7 +77,7 @@ pub trait DirectWritableKeyValueStore<E> {
     type Batch: SimplifiedBatch + Serialize + DeserializeOwned + Default;
 
     /// Writes the batch to the database.
-    async fn write_batch(&self, root_key: &[u8], batch: Self::Batch) -> Result<(), E>;
+    async fn write_batch(&self, batch: Self::Batch) -> Result<(), E>;
 }
 
 /// Low-level, asynchronous direct read/write key-value operations with simplified batch
@@ -108,13 +108,12 @@ where
     type Error = K::Error;
     async fn expand_delete_prefix(
         &self,
-        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Vec<Vec<u8>>, Self::Error> {
         let mut vector_list = Vec::new();
         for key in self
             .store
-            .find_keys_by_prefix(root_key, key_prefix)
+            .find_keys_by_prefix(key_prefix)
             .await?
             .iterator()
         {
@@ -142,47 +141,42 @@ where
 
     async fn read_value_bytes(
         &self,
-        root_key: &[u8],
         key: &[u8],
     ) -> Result<Option<Vec<u8>>, K::Error> {
-        self.store.read_value_bytes(root_key, key).await
+        self.store.read_value_bytes(key).await
     }
 
-    async fn contains_key(&self, root_key: &[u8], key: &[u8]) -> Result<bool, K::Error> {
-        self.store.contains_key(root_key, key).await
+    async fn contains_key(&self, key: &[u8]) -> Result<bool, K::Error> {
+        self.store.contains_key(key).await
     }
 
     async fn contains_keys(
         &self,
-        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<bool>, K::Error> {
-        self.store.contains_keys(root_key, keys).await
+        self.store.contains_keys(keys).await
     }
 
     async fn read_multi_values_bytes(
         &self,
-        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<Option<Vec<u8>>>, K::Error> {
-        self.store.read_multi_values_bytes(root_key, keys).await
+        self.store.read_multi_values_bytes(keys).await
     }
 
     async fn find_keys_by_prefix(
         &self,
-        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::Keys, K::Error> {
-        self.store.find_keys_by_prefix(root_key, key_prefix).await
+        self.store.find_keys_by_prefix(key_prefix).await
     }
 
     async fn find_key_values_by_prefix(
         &self,
-        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, K::Error> {
         self.store
-            .find_key_values_by_prefix(root_key, key_prefix)
+            .find_key_values_by_prefix(key_prefix)
             .await
     }
 }
@@ -202,6 +196,10 @@ where
     fn clone_with_root_key(&self, root_key: &[u8]) -> Result<Self, Self::Error> {
         let store = self.store.clone_with_root_key(root_key)?;
         Ok(Self { store })
+    }
+
+    fn root_key(&self) -> &[u8] {
+        &self.store.root_key()
     }
 
     async fn list_all(config: &Self::Config) -> Result<Vec<String>, Self::Error> {
@@ -233,21 +231,21 @@ where
     /// The size constant do not change
     const MAX_VALUE_SIZE: usize = K::MAX_VALUE_SIZE;
 
-    async fn write_batch(&self, root_key: &[u8], batch: Batch) -> Result<(), K::Error> {
-        let batch = K::Batch::from_batch(self, root_key, batch).await?;
+    async fn write_batch(&self, batch: Batch) -> Result<(), K::Error> {
+        let batch = K::Batch::from_batch(self, batch).await?;
         if Self::is_fastpath_feasible(&batch) {
-            self.store.write_batch(root_key, batch).await
+            self.store.write_batch(batch).await
         } else {
-            let header = self.write_journal(root_key, batch).await?;
-            self.coherently_resolve_journal(root_key, header).await
+            let header = self.write_journal(batch).await?;
+            self.coherently_resolve_journal(header).await
         }
     }
 
-    async fn clear_journal(&self, root_key: &[u8]) -> Result<(), K::Error> {
+    async fn clear_journal(&self) -> Result<(), K::Error> {
         let key = get_journaling_key(KeyTag::Journal as u8, 0)?;
-        let value = self.read_value::<JournalHeader>(root_key, &key).await?;
+        let value = self.read_value::<JournalHeader>(&key).await?;
         if let Some(header) = value {
-            self.coherently_resolve_journal(root_key, header).await?;
+            self.coherently_resolve_journal(header).await?;
         }
         Ok(())
     }
@@ -288,7 +286,6 @@ where
     /// doesn't exceed `K::MAX_VALUE_SIZE`.
     async fn coherently_resolve_journal(
         &self,
-        root_key: &[u8],
         mut header: JournalHeader,
     ) -> Result<(), K::Error> {
         let header_key = get_journaling_key(KeyTag::Journal as u8, 0)?;
@@ -297,7 +294,7 @@ where
             // Read the batch of updates (aka. "block") previously saved in the journal.
             let mut batch = self
                 .store
-                .read_value::<K::Batch>(root_key, &block_key)
+                .read_value::<K::Batch>(&block_key)
                 .await?
                 .ok_or(JournalConsistencyError::FailureToRetrieveJournalBlock)?;
             // Execute the block and delete it from the journal atomically.
@@ -309,7 +306,7 @@ where
             } else {
                 batch.add_delete(header_key.clone());
             }
-            self.store.write_batch(root_key, batch).await?;
+            self.store.write_batch(batch).await?;
         }
         Ok(())
     }
@@ -356,7 +353,6 @@ where
     ///   plus M bytes of overhead doesn't exceed the threshold of condition (2).
     async fn write_journal(
         &self,
-        root_key: &[u8],
         batch: K::Batch,
     ) -> Result<JournalHeader, K::Error> {
         let header_key = get_journaling_key(KeyTag::Journal as u8, 0)?;
@@ -405,7 +401,7 @@ where
             }
             if transaction_flush {
                 let batch = std::mem::take(&mut transaction_batch);
-                self.store.write_batch(root_key, batch).await?;
+                self.store.write_batch(batch).await?;
                 transaction_size = 0;
             }
         }
@@ -414,7 +410,7 @@ where
             let value = bcs::to_bytes(&header)?;
             let mut batch = K::Batch::default();
             batch.add_insert(header_key, value);
-            self.store.write_batch(root_key, batch).await?;
+            self.store.write_batch(batch).await?;
         }
         Ok(header)
     }

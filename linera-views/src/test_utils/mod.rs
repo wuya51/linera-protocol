@@ -728,8 +728,9 @@ where
     // Connecting to all of them at once
     {
         let mut connections = Vec::new();
+        let root_key = &[];
         for namespace in &working_namespaces {
-            let connection = S::connect(config, namespace)
+            let connection = S::connect(config, namespace, root_key)
                 .await
                 .expect("a connection to the namespace");
             connections.push(connection);

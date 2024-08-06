@@ -16,7 +16,7 @@ use linked_hash_map::LinkedHashMap;
 use prometheus::{register_int_counter_vec, IntCounterVec};
 #[cfg(with_testing)]
 use {
-    crate::common::{AdminKeyValueStore, CommonStoreConfig, ContextFromStore},
+    crate::common::{CommonStoreConfig, ContextFromStore},
     crate::memory::{MemoryStore, MemoryStoreConfig, TEST_MEMORY_MAX_STREAM_QUERIES},
     crate::views::ViewError,
 };
@@ -24,7 +24,7 @@ use {
 use crate::{
     batch::{Batch, WriteOperation},
     common::{
-        get_big_key, get_interval, KeyValueStore, ReadableKeyValueStore, WritableKeyValueStore,
+        get_interval, AdminKeyValueStore, CacheSize, KeyValueStore, ReadableKeyValueStore, WritableKeyValueStore,
     },
 };
 
@@ -108,6 +108,7 @@ pub struct LruCachingStore<K> {
     /// The inner store that is called by the LRU cache one
     pub store: K,
     lru_read_values: Option<Arc<Mutex<LruPrefixCache>>>,
+    cache_size: usize,
 }
 
 impl<K> ReadableKeyValueStore<K::Error> for LruCachingStore<K>
@@ -125,18 +126,15 @@ where
 
     async fn read_value_bytes(
         &self,
-        root_key: &[u8],
         key: &[u8],
     ) -> Result<Option<Vec<u8>>, K::Error> {
         let Some(lru_read_values) = &self.lru_read_values else {
-            return self.store.read_value_bytes(root_key, key).await;
+            return self.store.read_value_bytes(key).await;
         };
-
-        let big_key = get_big_key(root_key, key);
         // First inquiring in the read_value_bytes LRU
         {
             let lru_read_values_container = lru_read_values.lock().unwrap();
-            if let Some(value) = lru_read_values_container.query(&big_key) {
+            if let Some(value) = lru_read_values_container.query(key) {
                 #[cfg(with_metrics)]
                 NUM_CACHE_SUCCESS.with_label_values(&[]).inc();
                 return Ok(value.clone());
@@ -144,30 +142,28 @@ where
         }
         #[cfg(with_metrics)]
         NUM_CACHE_FAULT.with_label_values(&[]).inc();
-        let value = self.store.read_value_bytes(root_key, key).await?;
+        let value = self.store.read_value_bytes(key).await?;
         let mut lru_read_values = lru_read_values.lock().unwrap();
-        lru_read_values.insert(big_key, value.clone());
+        lru_read_values.insert(key.to_vec(), value.clone());
         Ok(value)
     }
 
-    async fn contains_key(&self, root_key: &[u8], key: &[u8]) -> Result<bool, K::Error> {
+    async fn contains_key(&self, key: &[u8]) -> Result<bool, K::Error> {
         if let Some(values) = &self.lru_read_values {
             let values = values.lock().unwrap();
-            let big_key = get_big_key(root_key, key);
-            if let Some(value) = values.query(&big_key) {
+            if let Some(value) = values.query(key) {
                 return Ok(value.is_some());
             }
         }
-        self.store.contains_key(root_key, key).await
+        self.store.contains_key(key).await
     }
 
     async fn contains_keys(
         &self,
-        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<bool>, K::Error> {
         let Some(values) = &self.lru_read_values else {
-            return self.store.contains_keys(root_key, keys).await;
+            return self.store.contains_keys(keys).await;
         };
         let size = keys.len();
         let mut results = vec![false; size];
@@ -176,8 +172,7 @@ where
         {
             let values = values.lock().unwrap();
             for i in 0..size {
-                let big_key = get_big_key(root_key, &keys[i]);
-                if let Some(value) = values.query(&big_key) {
+                if let Some(value) = values.query(&keys[i]) {
                     results[i] = value.is_some();
                 } else {
                     indices.push(i);
@@ -185,7 +180,7 @@ where
                 }
             }
         }
-        let key_results = self.store.contains_keys(root_key, key_requests).await?;
+        let key_results = self.store.contains_keys(key_requests).await?;
         for (index, result) in indices.into_iter().zip(key_results) {
             results[index] = result;
         }
@@ -194,11 +189,10 @@ where
 
     async fn read_multi_values_bytes(
         &self,
-        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<Option<Vec<u8>>>, K::Error> {
         let Some(lru_read_values) = &self.lru_read_values else {
-            return self.store.read_multi_values_bytes(root_key, keys).await;
+            return self.store.read_multi_values_bytes(keys).await;
         };
 
         let mut result = Vec::with_capacity(keys.len());
@@ -207,8 +201,7 @@ where
         {
             let lru_read_values_container = lru_read_values.lock().unwrap();
             for (i, key) in keys.into_iter().enumerate() {
-                let big_key = get_big_key(root_key, &key);
-                if let Some(value) = lru_read_values_container.query(&big_key) {
+                if let Some(value) = lru_read_values_container.query(&key) {
                     #[cfg(with_metrics)]
                     NUM_CACHE_SUCCESS.with_label_values(&[]).inc();
                     result.push(value.clone());
@@ -223,15 +216,14 @@ where
         }
         let values = self
             .store
-            .read_multi_values_bytes(root_key, miss_keys.clone())
+            .read_multi_values_bytes(miss_keys.clone())
             .await?;
         let mut lru_read_values = lru_read_values.lock().unwrap();
         for (i, (key, value)) in cache_miss_indices
             .into_iter()
             .zip(miss_keys.into_iter().zip(values))
         {
-            let big_key = get_big_key(root_key, &key);
-            lru_read_values.insert(big_key, value.clone());
+            lru_read_values.insert(key, value.clone());
             result[i] = value;
         }
         Ok(result)
@@ -239,19 +231,17 @@ where
 
     async fn find_keys_by_prefix(
         &self,
-        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::Keys, K::Error> {
-        self.store.find_keys_by_prefix(root_key, key_prefix).await
+        self.store.find_keys_by_prefix(key_prefix).await
     }
 
     async fn find_key_values_by_prefix(
         &self,
-        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, K::Error> {
         self.store
-            .find_key_values_by_prefix(root_key, key_prefix)
+            .find_key_values_by_prefix(key_prefix)
             .await
     }
 }
@@ -263,9 +253,9 @@ where
     // The LRU cache does not change the underlying store's size limits.
     const MAX_VALUE_SIZE: usize = K::MAX_VALUE_SIZE;
 
-    async fn write_batch(&self, root_key: &[u8], batch: Batch) -> Result<(), K::Error> {
+    async fn write_batch(&self, batch: Batch) -> Result<(), K::Error> {
         let Some(lru_read_values) = &self.lru_read_values else {
-            return self.store.write_batch(root_key, batch).await;
+            return self.store.write_batch(batch).await;
         };
 
         {
@@ -273,27 +263,81 @@ where
             for operation in &batch.operations {
                 match operation {
                     WriteOperation::Put { key, value } => {
-                        let big_key = get_big_key(root_key, key);
-                        lru_read_values.insert(big_key, Some(value.to_vec()));
+                        lru_read_values.insert(key.to_vec(), Some(value.to_vec()));
                     }
                     WriteOperation::Delete { key } => {
-                        let big_key = get_big_key(root_key, key);
-                        lru_read_values.insert(big_key, None);
+                        lru_read_values.insert(key.to_vec(), None);
                     }
                     WriteOperation::DeletePrefix { key_prefix } => {
-                        let big_key_prefix = get_big_key(root_key, key_prefix);
-                        lru_read_values.delete_prefix(&big_key_prefix);
+                        lru_read_values.delete_prefix(key_prefix);
                     }
                 }
             }
         }
-        self.store.write_batch(root_key, batch).await
+        self.store.write_batch(batch).await
     }
 
-    async fn clear_journal(&self, root_key: &[u8]) -> Result<(), K::Error> {
-        self.store.clear_journal(root_key).await
+    async fn clear_journal(&self) -> Result<(), K::Error> {
+        self.store.clear_journal().await
     }
 }
+
+fn get_lru_prefix_cache(cache_size: usize) -> Option<Arc<Mutex<LruPrefixCache>>> {
+    if cache_size == 0 {
+        None
+    } else {
+        Some(Arc::new(Mutex::new(LruPrefixCache::new(cache_size))))
+    }
+}
+
+
+impl<K> AdminKeyValueStore for LruCachingStore<K>
+where
+    K: AdminKeyValueStore + Send + Sync,
+{
+    type Error = K::Error;
+    type Config = K::Config;
+
+    async fn connect(config: &Self::Config, namespace: &str, root_key: &[u8]) -> Result<Self, Self::Error> {
+        let cache_size = config.cache_size();
+        let lru_read_values = get_lru_prefix_cache(cache_size);
+        let store = K::connect(config, namespace, root_key).await?;
+        Ok(Self { store, lru_read_values, cache_size })
+    }
+
+    fn clone_with_root_key(&self, root_key: &[u8]) -> Result<Self, Self::Error> {
+        let cache_size = self.cache_size;
+        let lru_read_values = get_lru_prefix_cache(cache_size);
+        let store = self.store.clone_with_root_key(root_key)?;
+        Ok(Self { store, lru_read_values, cache_size })
+    }
+
+    fn root_key(&self) -> &[u8] {
+        self.store.root_key()
+    }
+
+    async fn list_all(config: &Self::Config) -> Result<Vec<String>, Self::Error> {
+        K::list_all(config).await
+    }
+
+    async fn delete_all(config: &Self::Config) -> Result<(), Self::Error> {
+        K::delete_all(config).await
+    }
+
+    async fn exists(config: &Self::Config, namespace: &str) -> Result<bool, Self::Error> {
+        K::exists(config, namespace).await
+    }
+
+    async fn create(config: &Self::Config, namespace: &str) -> Result<(), Self::Error> {
+        K::create(config, namespace).await
+    }
+
+    async fn delete(config: &Self::Config, namespace: &str) -> Result<(), Self::Error> {
+        K::delete(config, namespace).await
+    }
+}
+
+
 
 impl<K> KeyValueStore for LruCachingStore<K>
 where
@@ -307,19 +351,9 @@ where
     K: KeyValueStore,
 {
     /// Creates a new key-value store that provides LRU caching at top of the given store.
-    pub fn new(store: K, max_size: usize) -> Self {
-        if max_size == 0 {
-            Self {
-                store,
-                lru_read_values: None,
-            }
-        } else {
-            let lru_read_values = Some(Arc::new(Mutex::new(LruPrefixCache::new(max_size))));
-            Self {
-                store,
-                lru_read_values,
-            }
-        }
+    pub fn new(store: K, cache_size: usize) -> Self {
+        let lru_read_values = get_lru_prefix_cache(cache_size);
+        Self { store, lru_read_values, cache_size }
     }
 }
 
@@ -330,7 +364,7 @@ pub type LruCachingMemoryContext<E> = ContextFromStore<E, LruCachingStore<Memory
 #[cfg(with_testing)]
 impl<E> LruCachingMemoryContext<E> {
     /// Creates a [`crate::key_value_store_view::KeyValueStoreMemoryContext`].
-    pub async fn new(root_key: Vec<u8>, extra: E, n: usize) -> Result<Self, ViewError> {
+    pub async fn new(extra: E, n: usize) -> Result<Self, ViewError> {
         let common_config = CommonStoreConfig {
             max_concurrent_queries: None,
             max_stream_queries: TEST_MEMORY_MAX_STREAM_QUERIES,
@@ -345,7 +379,6 @@ impl<E> LruCachingMemoryContext<E> {
         let base_key = Vec::new();
         Ok(Self {
             store,
-            root_key,
             base_key,
             extra,
         })

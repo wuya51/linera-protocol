@@ -14,7 +14,7 @@ use crate::test_utils::generate_test_namespace;
 use crate::{
     batch::{Batch, DeletePrefixExpander, WriteOperation},
     common::{
-        get_interval, AdminKeyValueStore, CommonStoreConfig, Context,
+        get_interval, AdminKeyValueStore, CacheSize, CommonStoreConfig, Context,
         ContextFromStore, KeyIterable, KeyValueStore, ReadableKeyValueStore, WritableKeyValueStore,
     },
     value_splitting::DatabaseConsistencyError,
@@ -97,7 +97,6 @@ impl ReadableKeyValueStore<MemoryStoreError> for MemoryStore {
 
     async fn read_value_bytes(
         &self,
-        root_key: &[u8],
         key: &[u8],
     ) -> Result<Option<Vec<u8>>, MemoryStoreError> {
         let map = self
@@ -107,7 +106,7 @@ impl ReadableKeyValueStore<MemoryStoreError> for MemoryStore {
         Ok(map.get(key).cloned())
     }
 
-    async fn contains_key(&self, root_key: &[u8], key: &[u8]) -> Result<bool, MemoryStoreError> {
+    async fn contains_key(&self, key: &[u8]) -> Result<bool, MemoryStoreError> {
         let map = self
             .map
             .read()
@@ -117,7 +116,6 @@ impl ReadableKeyValueStore<MemoryStoreError> for MemoryStore {
 
     async fn contains_keys(
         &self,
-        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<bool>, MemoryStoreError> {
         let map = self
@@ -132,7 +130,6 @@ impl ReadableKeyValueStore<MemoryStoreError> for MemoryStore {
 
     async fn read_multi_values_bytes(
         &self,
-        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<Option<Vec<u8>>>, MemoryStoreError> {
         let map = self
@@ -148,7 +145,6 @@ impl ReadableKeyValueStore<MemoryStoreError> for MemoryStore {
 
     async fn find_keys_by_prefix(
         &self,
-        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Vec<Vec<u8>>, MemoryStoreError> {
         let map = self
@@ -165,7 +161,6 @@ impl ReadableKeyValueStore<MemoryStoreError> for MemoryStore {
 
     async fn find_key_values_by_prefix(
         &self,
-        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, MemoryStoreError> {
         let map = self
@@ -185,7 +180,7 @@ impl ReadableKeyValueStore<MemoryStoreError> for MemoryStore {
 impl WritableKeyValueStore<MemoryStoreError> for MemoryStore {
     const MAX_VALUE_SIZE: usize = usize::MAX;
 
-    async fn write_batch(&self, root_key: &[u8], batch: Batch) -> Result<(), MemoryStoreError> {
+    async fn write_batch(&self, batch: Batch) -> Result<(), MemoryStoreError> {
         let mut map = self
             .map
             .write()
@@ -212,7 +207,7 @@ impl WritableKeyValueStore<MemoryStoreError> for MemoryStore {
         Ok(())
     }
 
-    async fn clear_journal(&self, _root_key: &[u8]) -> Result<(), MemoryStoreError> {
+    async fn clear_journal(&self) -> Result<(), MemoryStoreError> {
         Ok(())
     }
 }
@@ -314,6 +309,12 @@ impl MemoryStore {
     }
 }
 
+impl CacheSize for MemoryStoreConfig {
+    fn cache_size(&self) -> usize {
+        self.common_config.cache_size
+    }
+}
+
 impl AdminKeyValueStore for MemoryStore {
     type Error = MemoryStoreError;
     type Config = MemoryStoreConfig;
@@ -346,6 +347,10 @@ impl AdminKeyValueStore for MemoryStore {
         let kill_on_drop = self.kill_on_drop;
         let namespace = &self.namespace;
         Self::sync_connect(&memory_stores, &config, namespace, root_key, kill_on_drop)
+    }
+
+    fn root_key(&self) -> &[u8] {
+        &self.root_key
     }
 
     async fn list_all(_config: &Self::Config) -> Result<Vec<String>, MemoryStoreError> {
@@ -401,11 +406,9 @@ impl<E> MemoryContext<E> {
     /// Creates a [`MemoryContext`].
     pub fn new(max_stream_queries: usize, namespace: &str, root_key: &[u8], extra: E) -> Self {
         let store = MemoryStore::new(max_stream_queries, namespace, root_key).unwrap();
-        let root_key = Vec::new();
         let base_key = Vec::new();
         Self {
             store,
-            root_key,
             base_key,
             extra,
         }
@@ -413,13 +416,11 @@ impl<E> MemoryContext<E> {
 
     /// Creates a [`MemoryContext`] for testing.
     #[cfg(with_testing)]
-    pub fn new_for_testing(max_stream_queries: usize, namespace: &str, extra: E) -> Self {
-        let store = MemoryStore::new_for_testing(max_stream_queries, namespace).unwrap();
-        let root_key = Vec::new();
+    pub fn new_for_testing(max_stream_queries: usize, namespace: &str, root_key: &[u8], extra: E) -> Self {
+        let store = MemoryStore::new_for_testing(max_stream_queries, namespace, root_key).unwrap();
         let base_key = Vec::new();
         Self {
             store,
-            root_key,
             base_key,
             extra,
         }
@@ -432,14 +433,16 @@ impl<E> MemoryContext<E> {
 #[cfg(with_testing)]
 pub fn create_test_memory_context() -> MemoryContext<()> {
     let namespace = generate_test_namespace();
-    MemoryContext::new_for_testing(TEST_MEMORY_MAX_STREAM_QUERIES, &namespace, ())
+    let root_key = &[];
+    MemoryContext::new_for_testing(TEST_MEMORY_MAX_STREAM_QUERIES, &namespace, root_key, ())
 }
 
 /// Creates a test memory store for working.
 #[cfg(with_testing)]
 pub fn create_test_memory_store() -> MemoryStore {
     let namespace = generate_test_namespace();
-    MemoryStore::new_for_testing(TEST_MEMORY_MAX_STREAM_QUERIES, &namespace).unwrap()
+    let root_key = &[];
+    MemoryStore::new_for_testing(TEST_MEMORY_MAX_STREAM_QUERIES, &namespace, root_key).unwrap()
 }
 
 /// The error type for [`MemoryContext`].
@@ -476,7 +479,6 @@ impl DeletePrefixExpander for MemoryContext<()> {
 
     async fn expand_delete_prefix(
         &self,
-        _root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Vec<Vec<u8>>, Self::Error> {
         let mut vector_list = Vec::new();

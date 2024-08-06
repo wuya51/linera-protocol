@@ -366,32 +366,29 @@ pub trait LocalReadableKeyValueStore<E> {
     fn max_stream_queries(&self) -> usize;
 
     /// Retrieves a `Vec<u8>` from the database using the provided `key`.
-    async fn read_value_bytes(&self, root_key: &[u8], key: &[u8]) -> Result<Option<Vec<u8>>, E>;
+    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, E>;
 
     /// Tests whether a key exists in the database
-    async fn contains_key(&self, root_key: &[u8], key: &[u8]) -> Result<bool, E>;
+    async fn contains_key(&self, key: &[u8]) -> Result<bool, E>;
 
     /// Tests whether a list of keys exist in the database
-    async fn contains_keys(&self, root_key: &[u8], keys: Vec<Vec<u8>>) -> Result<Vec<bool>, E>;
+    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, E>;
 
     /// Retrieves multiple `Vec<u8>` from the database using the provided `keys`.
     async fn read_multi_values_bytes(
         &self,
-        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<Option<Vec<u8>>>, E>;
 
     /// Finds the `key` matching the prefix. The prefix is not included in the returned keys.
     async fn find_keys_by_prefix(
         &self,
-        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::Keys, E>;
 
     /// Finds the `(key,value)` pairs matching the prefix. The prefix is not included in the returned keys.
     async fn find_key_values_by_prefix(
         &self,
-        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, E>;
 
@@ -402,20 +399,18 @@ pub trait LocalReadableKeyValueStore<E> {
     /// Reads a single `key` and deserializes the result if present.
     fn read_value<V: DeserializeOwned>(
         &self,
-        root_key: &[u8],
         key: &[u8],
     ) -> impl Future<Output = Result<Option<V>, E>>
     where
         Self: Sync,
         E: From<bcs::Error>,
     {
-        async { from_bytes_option(&self.read_value_bytes(root_key, key).await?) }
+        async { from_bytes_option(&self.read_value_bytes(key).await?) }
     }
 
     /// Reads multiple `keys` and deserializes the results if present.
     fn read_multi_values<V: DeserializeOwned + Send>(
         &self,
-        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> impl Future<Output = Result<Vec<Option<V>>, E>>
     where
@@ -424,7 +419,7 @@ pub trait LocalReadableKeyValueStore<E> {
     {
         async {
             let mut values = Vec::with_capacity(keys.len());
-            for entry in self.read_multi_values_bytes(root_key, keys).await? {
+            for entry in self.read_multi_values_bytes(keys).await? {
                 values.push(from_bytes_option(&entry)?);
             }
             Ok(values)
@@ -438,13 +433,20 @@ pub trait LocalWritableKeyValueStore<E> {
     /// The maximal size of values that can be stored.
     const MAX_VALUE_SIZE: usize;
 
-    /// Writes the `batch` in the database with `base_key` the base key of the entries for the journal.
-    async fn write_batch(&self, root_key: &[u8], batch: Batch) -> Result<(), E>;
+    /// Writes the `batch` in the database.
+    async fn write_batch(&self, batch: Batch) -> Result<(), E>;
 
     /// Clears any journal entry that may remain.
     /// The journal is located at the `root_key`.
-    async fn clear_journal(&self, root_key: &[u8]) -> Result<(), E>;
+    async fn clear_journal(&self) -> Result<(), E>;
 }
+
+/// Config types need to be able to return their cache size
+pub trait CacheSize {
+    /// Get the cache size of the `Config` entry.
+    fn cache_size(&self) -> usize;
+}
+
 
 /// Low-level trait for the administration of stores and their namespaces.
 #[trait_variant::make(AdminKeyValueStore: Send)]
@@ -453,13 +455,16 @@ pub trait LocalAdminKeyValueStore: Sized {
     type Error;
 
     /// The configuration needed to interact with a new store.
-    type Config: Send + Sync;
+    type Config: Send + Sync + CacheSize;
 
     /// Connects to an existing namespace using the given configuration.
     async fn connect(config: &Self::Config, namespace: &str, root_key: &[u8]) -> Result<Self, Self::Error>;
 
     /// Take a connection and create a new one with a different `root_key`.
     fn clone_with_root_key(&self, root_key: &[u8]) -> Result<Self, Self::Error>;
+
+    /// Obtain the `root_key`.
+    fn root_key(&self) -> &[u8];
 
     /// Obtains the list of existing namespaces.
     async fn list_all(config: &Self::Config) -> Result<Vec<String>, Self::Error>;
@@ -672,9 +677,6 @@ pub trait Context: Clone {
     /// Obtains a similar [`Context`] implementation with a different base key.
     fn clone_with_base_key(&self, base_key: Vec<u8>) -> Self;
 
-    /// Getter for the address of the root key.
-    fn root_key(&self) -> Vec<u8>;
-
     /// Getter for the address of the base key.
     fn base_key(&self) -> Vec<u8>;
 
@@ -765,8 +767,6 @@ pub trait Context: Clone {
 pub struct ContextFromStore<E, S> {
     /// The DB client that is shared between views.
     pub store: S,
-    /// The root key for the context.
-    pub root_key: Vec<u8>,
     /// The base key for the context.
     pub base_key: Vec<u8>,
     /// User-defined data attached to the view.
@@ -783,14 +783,12 @@ where
     /// Creates a context from store that also clears the journal before making it available.
     pub async fn create(
         store: S,
-        root_key: Vec<u8>,
         extra: E,
     ) -> Result<Self, <ContextFromStore<E, S> as Context>::Error> {
-        store.clear_journal(&root_key).await?;
+        store.clear_journal().await?;
         let base_key = Vec::new();
         Ok(ContextFromStore {
             store,
-            root_key,
             base_key,
             extra,
         })
@@ -845,29 +843,25 @@ where
         &self.extra
     }
 
-    fn root_key(&self) -> Vec<u8> {
-        self.root_key.clone()
-    }
-
     fn base_key(&self) -> Vec<u8> {
         self.base_key.clone()
     }
 
     async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
         log_time_async(
-            self.store.read_value_bytes(&self.root_key, key),
+            self.store.read_value_bytes(key),
             "read_value_bytes",
         )
         .await
     }
 
     async fn contains_key(&self, key: &[u8]) -> Result<bool, Self::Error> {
-        log_time_async(self.store.contains_key(&self.root_key, key), "contains_key").await
+        log_time_async(self.store.contains_key(key), "contains_key").await
     }
 
     async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, Self::Error> {
         log_time_async(
-            self.store.contains_keys(&self.root_key, keys),
+            self.store.contains_keys(keys),
             "contains_keys",
         )
         .await
@@ -878,7 +872,7 @@ where
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<Option<Vec<u8>>>, Self::Error> {
         log_time_async(
-            self.store.read_multi_values_bytes(&self.root_key, keys),
+            self.store.read_multi_values_bytes(keys),
             "read_multi_values_bytes",
         )
         .await
@@ -886,7 +880,7 @@ where
 
     async fn find_keys_by_prefix(&self, key_prefix: &[u8]) -> Result<Self::Keys, Self::Error> {
         log_time_async(
-            self.store.find_keys_by_prefix(&self.root_key, key_prefix),
+            self.store.find_keys_by_prefix(key_prefix),
             "find_keys_by_prefix",
         )
         .await
@@ -898,20 +892,19 @@ where
     ) -> Result<Self::KeyValues, Self::Error> {
         log_time_async(
             self.store
-                .find_key_values_by_prefix(&self.root_key, key_prefix),
+                .find_key_values_by_prefix(key_prefix),
             "find_key_values_by_prefix",
         )
         .await
     }
 
     async fn write_batch(&self, batch: Batch) -> Result<(), Self::Error> {
-        log_time_async(self.store.write_batch(&self.root_key, batch), "write_batch").await
+        log_time_async(self.store.write_batch(batch), "write_batch").await
     }
 
     fn clone_with_base_key(&self, base_key: Vec<u8>) -> Self {
         Self {
             store: self.store.clone(),
-            root_key: self.root_key.clone(),
             base_key,
             extra: self.extra.clone(),
         }
