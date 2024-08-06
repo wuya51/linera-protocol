@@ -43,7 +43,7 @@ static KEY_VALUE_STORE_VIEW_HASH_RUNTIME: LazyLock<HistogramVec> = LazyLock::new
 #[cfg(with_testing)]
 use {
     crate::common::{
-        get_big_key, ContextFromStore, KeyValueStore, ReadableKeyValueStore, WritableKeyValueStore,
+        ContextFromStore, KeyValueStore, ReadableKeyValueStore, WritableKeyValueStore,
     },
     crate::memory::{create_test_memory_context, MemoryContext},
     async_lock::RwLock,
@@ -1096,64 +1096,47 @@ where
 
     async fn read_value_bytes(
         &self,
-        root_key: &[u8],
         key: &[u8],
     ) -> Result<Option<Vec<u8>>, ViewError> {
         let view = self.view.read().await;
-        let big_key = get_big_key(root_key, key);
-        view.get(&big_key).await
+        view.get(key).await
     }
 
-    async fn contains_key(&self, root_key: &[u8], key: &[u8]) -> Result<bool, ViewError> {
+    async fn contains_key(&self, key: &[u8]) -> Result<bool, ViewError> {
         let view = self.view.read().await;
-        let big_key = get_big_key(root_key, key);
-        view.contains_key(&big_key).await
+        view.contains_key(key).await
     }
 
     async fn contains_keys(
         &self,
-        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<bool>, ViewError> {
         let view = self.view.read().await;
-        let big_keys = keys
-            .into_iter()
-            .map(|key| get_big_key(root_key, &key))
-            .collect::<Vec<_>>();
-        view.contains_keys(big_keys).await
+        view.contains_keys(keys).await
     }
 
     async fn read_multi_values_bytes(
         &self,
-        root_key: &[u8],
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<Option<Vec<u8>>>, ViewError> {
         let view = self.view.read().await;
-        let big_keys = keys
-            .into_iter()
-            .map(|key| get_big_key(root_key, &key))
-            .collect::<Vec<_>>();
-        view.multi_get(big_keys).await
+        view.multi_get(keys).await
     }
 
     async fn find_keys_by_prefix(
         &self,
-        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::Keys, ViewError> {
         let view = self.view.read().await;
-        let big_key_prefix = get_big_key(root_key, key_prefix);
-        view.find_keys_by_prefix(&big_key_prefix).await
+        view.find_keys_by_prefix(key_prefix).await
     }
 
     async fn find_key_values_by_prefix(
         &self,
-        root_key: &[u8],
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, ViewError> {
         let view = self.view.read().await;
-        let big_key_prefix = get_big_key(root_key, key_prefix);
-        view.find_key_values_by_prefix(&big_key_prefix).await
+        view.find_key_values_by_prefix(key_prefix).await
     }
 }
 
@@ -1165,33 +1148,16 @@ where
 {
     const MAX_VALUE_SIZE: usize = C::MAX_VALUE_SIZE;
 
-    async fn write_batch(&self, root_key: &[u8], batch: Batch) -> Result<(), ViewError> {
-        let mut batch_new = Batch::new();
-        for operation in batch.operations {
-            match operation {
-                WriteOperation::Put { key, value } => {
-                    let big_key = get_big_key(root_key, &key);
-                    batch_new.put_key_value_bytes(big_key, value);
-                }
-                WriteOperation::Delete { key } => {
-                    let big_key = get_big_key(root_key, &key);
-                    batch_new.delete_key(big_key);
-                }
-                WriteOperation::DeletePrefix { key_prefix } => {
-                    let big_key_prefix = get_big_key(root_key, &key_prefix);
-                    batch_new.delete_key_prefix(big_key_prefix);
-                }
-            }
-        }
+    async fn write_batch(&self, batch: Batch) -> Result<(), ViewError> {
         let mut view = self.view.write().await;
-        view.write_batch(batch_new).await?;
+        view.write_batch(batch).await?;
         let mut batch = Batch::new();
         view.flush(&mut batch)?;
         view.context().write_batch(batch).await?;
         Ok(())
     }
 
-    async fn clear_journal(&self, _base_key: &[u8]) -> Result<(), ViewError> {
+    async fn clear_journal(&self) -> Result<(), ViewError> {
         Ok(())
     }
 }
@@ -1219,6 +1185,10 @@ where
     }
 }
 
+
+
+
+
 /// A context that stores all values in memory.
 #[cfg(with_testing)]
 pub type KeyValueStoreMemoryContext<E> = ContextFromStore<E, ViewContainer<MemoryContext<()>>>;
@@ -1226,13 +1196,12 @@ pub type KeyValueStoreMemoryContext<E> = ContextFromStore<E, ViewContainer<Memor
 #[cfg(with_testing)]
 impl<E> KeyValueStoreMemoryContext<E> {
     /// Creates a [`KeyValueStoreMemoryContext`].
-    pub async fn new(root_key: Vec<u8>, extra: E) -> Result<Self, ViewError> {
+    pub async fn new(extra: E) -> Result<Self, ViewError> {
         let context = create_test_memory_context();
         let store = ViewContainer::new(context).await?;
         let base_key = Vec::new();
         Ok(Self {
             store,
-            root_key,
             base_key,
             extra,
         })

@@ -24,7 +24,7 @@ use linera_views::{
     register_view::HashedRegisterView,
     set_view::HashedSetView,
     test_utils::{
-        self, get_random_byte_vector, get_random_key_prefix, get_random_key_value_operations,
+        self, get_random_byte_vector, get_random_key_value_operations,
         get_random_key_values, random_shuffle, span_random_reordering_put_delete,
     },
     views::{CryptoHashRootView, HashableView, Hasher, RootView, View, ViewError},
@@ -77,7 +77,6 @@ pub trait StateStore {
 pub struct MemoryTestStore {
     accessed_chains: BTreeSet<usize>,
     store: MemoryStore,
-    root_key: Vec<u8>,
 }
 
 #[async_trait]
@@ -86,11 +85,9 @@ impl StateStore for MemoryTestStore {
 
     async fn new() -> Self {
         let store = create_test_memory_store();
-        let root_key = get_random_key_prefix();
         MemoryTestStore {
             accessed_chains: BTreeSet::new(),
             store,
-            root_key,
         }
     }
 
@@ -100,10 +97,8 @@ impl StateStore for MemoryTestStore {
         tracing::trace!("Acquiring lock on {:?}", id);
         let base_key = bcs::to_bytes(&id)?;
         let store = self.store.clone();
-        let root_key = self.root_key.clone();
         let context = MemoryContext {
             store,
-            root_key,
             base_key,
             extra: id,
         };
@@ -114,7 +109,6 @@ impl StateStore for MemoryTestStore {
 pub struct KeyValueStoreTestStore {
     accessed_chains: BTreeSet<usize>,
     store: ViewContainer<MemoryContext<()>>,
-    root_key: Vec<u8>,
 }
 
 #[async_trait]
@@ -125,16 +119,13 @@ impl StateStore for KeyValueStoreTestStore {
         let store = create_test_memory_store();
         let context = MemoryContext {
             store,
-            root_key: get_random_key_prefix(),
             base_key: Vec::new(),
             extra: (),
         };
         let store = ViewContainer::new(context).await.unwrap();
-        let root_key = get_random_key_prefix();
         KeyValueStoreTestStore {
             accessed_chains: BTreeSet::new(),
             store,
-            root_key,
         }
     }
 
@@ -144,10 +135,8 @@ impl StateStore for KeyValueStoreTestStore {
         tracing::trace!("Acquiring lock on {:?}", id);
         let base_key = bcs::to_bytes(&id)?;
         let store = self.store.clone();
-        let root_key = self.root_key.clone();
         let context = KeyValueStoreMemoryContext {
             store,
-            root_key,
             base_key,
             extra: id,
         };
@@ -158,7 +147,6 @@ impl StateStore for KeyValueStoreTestStore {
 pub struct LruMemoryStore {
     accessed_chains: BTreeSet<usize>,
     store: LruCachingStore<MemoryStore>,
-    root_key: Vec<u8>,
 }
 
 #[async_trait]
@@ -167,13 +155,11 @@ impl StateStore for LruMemoryStore {
 
     async fn new() -> Self {
         let store = create_test_memory_store();
-        let n = 1000;
-        let store = LruCachingStore::new(store, n);
-        let root_key = get_random_key_prefix();
+        let cache_size = 1000;
+        let store = LruCachingStore::new(store, cache_size);
         LruMemoryStore {
             accessed_chains: BTreeSet::new(),
             store,
-            root_key,
         }
     }
 
@@ -183,10 +169,8 @@ impl StateStore for LruMemoryStore {
         tracing::trace!("Acquiring lock on {:?}", id);
         let base_key = bcs::to_bytes(&id)?;
         let store = self.store.clone();
-        let root_key = self.root_key.clone();
         let context = LruCachingMemoryContext {
             store,
-            root_key,
             base_key,
             extra: id,
         };
@@ -221,7 +205,8 @@ impl StateStore for RocksDbTestStore {
         // TODO(#643): Actually acquire a lock.
         tracing::trace!("Acquiring lock on {:?}", id);
         let root_key = bcs::to_bytes(&id)?;
-        let context = RocksDbContext::new(self.store.clone(), root_key, id);
+        let store = self.store.clone_with_root_key(&root_key);
+        let context = RocksDbContext::new(store, id);
         StateView::load(context).await
     }
 }
@@ -251,17 +236,15 @@ impl StateStore for ScyllaDbTestStore {
         // TODO(#643): Actually acquire a lock.
         tracing::trace!("Acquiring lock on {:?}", id);
         let root_key = bcs::to_bytes(&id)?;
-        let context = ScyllaDbContext::new(self.store.clone(), root_key, id);
+        let store = self.store.clone_with_root_key(&root_key);
+        let context = ScyllaDbContext::new(store, root_key, id);
         StateView::load(context).await
     }
 }
 
 #[cfg(with_dynamodb)]
 pub struct DynamoDbTestStore {
-    localstack: LocalStackTestContext,
-    namespace: String,
-    is_created: bool,
-    common_config: CommonStoreConfig,
+    store: DynamoDbStore,
     accessed_chains: BTreeSet<usize>,
 }
 
@@ -273,14 +256,18 @@ impl StateStore for DynamoDbTestStore {
     async fn new() -> Self {
         let localstack = LocalStackTestContext::new().await.expect("localstack");
         let namespace = generate_test_namespace();
-        let is_created = false;
         let common_config = create_dynamo_db_common_config();
         let accessed_chains = BTreeSet::new();
-        DynamoDbTestStore {
-            localstack,
-            namespace,
-            is_created,
+        let store_config = DynamoDbStoreConfig {
+            config: localstack.dynamo_db_config(),
             common_config,
+        };
+        let root_key = &[];
+        let store = DynamoDbStore::recreate_and_connect(&store_config, namespace, root_key)
+            .await
+            .expect("failed to create from scratch");
+        DynamoDbTestStore {
+            store,
             accessed_chains,
         }
     }
@@ -290,23 +277,8 @@ impl StateStore for DynamoDbTestStore {
         // TODO(#643): Actually acquire a lock.
         tracing::trace!("Acquiring lock on {:?}", id);
         let root_key = bcs::to_bytes(&id)?;
-        let store_config = DynamoDbStoreConfig {
-            config: self.localstack.dynamo_db_config(),
-            common_config: self.common_config.clone(),
-        };
-        let namespace = &self.namespace;
-
-        let store = if self.is_created {
-            DynamoDbStore::connect(&store_config, namespace)
-                .await
-                .expect("failed to connect")
-        } else {
-            DynamoDbStore::recreate_and_connect(&store_config, namespace)
-                .await
-                .expect("failed to create from scratch")
-        };
-        let context = DynamoDbContext::new(store, root_key, id);
-        self.is_created = true;
+        let store = self.store.clone_with_root_key(&root_key)?;
+        let context = DynamoDbContext::new(store, id);
         StateView::load(context).await
     }
 }

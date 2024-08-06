@@ -7,7 +7,7 @@ use linera_views::{
     key_value_store_view::ViewContainer,
     memory::{create_test_memory_context, create_test_memory_store},
     test_utils::{
-        self, get_random_key_prefix, get_random_test_scenarios, run_big_write_read, run_reads,
+        self, get_random_test_scenarios, run_big_write_read, run_reads,
         run_writes_from_blank, run_writes_from_state,
     },
     value_splitting::create_value_splitting_memory_store,
@@ -144,7 +144,6 @@ async fn test_big_value_read_write() {
     let context = create_test_memory_context();
     for count in [50, 1024] {
         let rng = test_utils::make_deterministic_rng();
-        let root_key = get_random_key_prefix();
         let test_string = rng
             .sample_iter(&Alphanumeric)
             .take(count)
@@ -153,10 +152,10 @@ async fn test_big_value_read_write() {
         let mut batch = Batch::new();
         let key = vec![43, 23, 56];
         batch.put_key_value(key.clone(), &test_string).unwrap();
-        context.store.write_batch(&root_key, batch).await.unwrap();
+        context.store.write_batch(batch).await.unwrap();
         let read_string = context
             .store
-            .read_value::<String>(&root_key, &key)
+            .read_value::<String>(&key)
             .await
             .unwrap()
             .unwrap();

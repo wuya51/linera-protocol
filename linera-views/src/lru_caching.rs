@@ -307,6 +307,7 @@ where
 
     fn clone_with_root_key(&self, root_key: &[u8]) -> Result<Self, Self::Error> {
         let cache_size = self.cache_size;
+        // The cloning starts with an empty cache.
         let lru_read_values = get_lru_prefix_cache(cache_size);
         let store = self.store.clone_with_root_key(root_key)?;
         Ok(Self { store, lru_read_values, cache_size })
@@ -364,18 +365,18 @@ pub type LruCachingMemoryContext<E> = ContextFromStore<E, LruCachingStore<Memory
 #[cfg(with_testing)]
 impl<E> LruCachingMemoryContext<E> {
     /// Creates a [`crate::key_value_store_view::KeyValueStoreMemoryContext`].
-    pub async fn new(extra: E, n: usize) -> Result<Self, ViewError> {
+    pub async fn new(extra: E, cache_size: usize) -> Result<Self, ViewError> {
         let common_config = CommonStoreConfig {
             max_concurrent_queries: None,
             max_stream_queries: TEST_MEMORY_MAX_STREAM_QUERIES,
-            cache_size: 1000,
+            cache_size,
         };
         let config = MemoryStoreConfig { common_config };
         let namespace = "linera";
-        let store = MemoryStore::connect(&config, namespace)
+        let root_key = &[];
+        let store = LruCachingStore::<MemoryStore>::maybe_create_and_connect(&config, namespace, root_key)
             .await
             .expect("store");
-        let store = LruCachingStore::new(store, n);
         let base_key = Vec::new();
         Ok(Self {
             store,

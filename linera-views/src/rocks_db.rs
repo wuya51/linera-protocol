@@ -74,6 +74,12 @@ impl RocksDbStoreInternal {
     }
 }
 
+fn get_big_key(root_key: &[u8], key: &[u8]) -> Vec<u8> {
+    let mut big_key = root_key.to_vec();
+    big_key.extend(key);
+    big_key
+}
+
 impl ReadableKeyValueStore<RocksDbStoreError> for RocksDbStoreInternal {
     const MAX_KEY_SIZE: usize = MAX_KEY_SIZE;
     type Keys = Vec<Vec<u8>>;

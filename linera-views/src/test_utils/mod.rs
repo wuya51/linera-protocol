@@ -246,13 +246,12 @@ pub async fn run_reads<S: LocalKeyValueStore>(store: S, key_values: Vec<(Vec<u8>
     let mut batch = Batch::new();
     let mut keys = Vec::new();
     let mut set_keys = HashSet::new();
-    let root_key = get_random_key_prefix();
     for (key, value) in &key_values {
         keys.push(&key[..]);
         set_keys.insert(&key[..]);
         batch.put_key_value_bytes(key.clone(), value.clone());
     }
-    store.write_batch(&root_key, batch).await.unwrap();
+    store.write_batch(batch).await.unwrap();
     for key_prefix in keys
         .iter()
         .flat_map(|key| (0..key.len()).map(|u| &key[..=u]))
@@ -260,7 +259,7 @@ pub async fn run_reads<S: LocalKeyValueStore>(store: S, key_values: Vec<(Vec<u8>
         // Getting the find_keys_by_prefix / find_key_values_by_prefix
         let len_prefix = key_prefix.len();
         let keys_by_prefix = store
-            .find_keys_by_prefix(&root_key, key_prefix)
+            .find_keys_by_prefix(key_prefix)
             .await
             .unwrap();
         let keys_request = keys_by_prefix
@@ -270,7 +269,7 @@ pub async fn run_reads<S: LocalKeyValueStore>(store: S, key_values: Vec<(Vec<u8>
         let mut set_key_value1 = HashSet::new();
         let mut keys_request_deriv = Vec::new();
         let key_values_by_prefix = store
-            .find_key_values_by_prefix(&root_key, key_prefix)
+            .find_key_values_by_prefix(key_prefix)
             .await
             .unwrap();
         for (key, value) in key_values_by_prefix.iterator().map(Result::unwrap) {
@@ -319,12 +318,12 @@ pub async fn run_reads<S: LocalKeyValueStore>(store: S, key_values: Vec<(Vec<u8>
         let mut test_exists = Vec::new();
         let mut values_single_read = Vec::new();
         for key in &keys {
-            test_exists.push(store.contains_key(&root_key, key).await.unwrap());
-            values_single_read.push(store.read_value_bytes(&root_key, key).await.unwrap());
+            test_exists.push(store.contains_key(key).await.unwrap());
+            values_single_read.push(store.read_value_bytes(key).await.unwrap());
         }
-        let test_exists_direct = store.contains_keys(&root_key, keys.clone()).await.unwrap();
+        let test_exists_direct = store.contains_keys(keys.clone()).await.unwrap();
         let values_read = store
-            .read_multi_values_bytes(&root_key, keys)
+            .read_multi_values_bytes(keys)
             .await
             .unwrap();
         assert_eq!(values, values_read);
@@ -446,12 +445,11 @@ fn realize_batch(batch: &Batch) -> BTreeMap<Vec<u8>, Vec<u8>> {
 
 async fn read_key_values_prefix<C: LocalKeyValueStore>(
     key_value_store: &C,
-    root_key: &[u8],
     key_prefix: &[u8],
 ) -> BTreeMap<Vec<u8>, Vec<u8>> {
     let mut key_values = BTreeMap::new();
     for key_value in key_value_store
-        .find_key_values_by_prefix(root_key, key_prefix)
+        .find_key_values_by_prefix(key_prefix)
         .await
         .unwrap()
         .iterator()
@@ -467,14 +465,13 @@ async fn read_key_values_prefix<C: LocalKeyValueStore>(
 /// Writes and then reads data under a prefix, and verifies the result.
 pub async fn run_test_batch_from_blank<C: LocalKeyValueStore>(
     key_value_store: &C,
-    root_key: &[u8],
     key_prefix: Vec<u8>,
     batch: Batch,
 ) {
     let kv_state = realize_batch(&batch);
-    key_value_store.write_batch(root_key, batch).await.unwrap();
+    key_value_store.write_batch(batch).await.unwrap();
     // Checking the consistency
-    let key_values = read_key_values_prefix(key_value_store, root_key, &key_prefix).await;
+    let key_values = read_key_values_prefix(key_value_store, &key_prefix).await;
     assert_eq!(key_values, kv_state);
 }
 
@@ -483,18 +480,17 @@ pub async fn run_writes_from_blank<C: LocalKeyValueStore>(key_value_store: &C) {
     let mut rng = make_deterministic_rng();
     let n_oper = 10;
     let batch_size = 500;
-    let root_key = get_random_key_prefix();
     // key space has size 4^4 = 256 so we necessarily encounter collisions
     // because the number of generated keys is about batch_size * n_oper = 800 > 256.
     for _ in 0..n_oper {
         let key_prefix = get_random_key_prefix();
         let batch = generate_random_batch(&mut rng, &key_prefix, batch_size);
-        run_test_batch_from_blank(key_value_store, &root_key, key_prefix, batch).await;
+        run_test_batch_from_blank(key_value_store, key_prefix, batch).await;
     }
     for option in 0..2 {
         let key_prefix = get_random_key_prefix();
         let batch = generate_specific_batch(&key_prefix, option);
-        run_test_batch_from_blank(key_value_store, &root_key, key_prefix, batch).await;
+        run_test_batch_from_blank(key_value_store, key_prefix, batch).await;
     }
 }
 
@@ -515,7 +511,6 @@ pub async fn tombstone_triggering_test<C: LocalKeyValueStore>(key_value_store: C
     // Putting the keys
     let mut batch_insert = Batch::new();
     let key_prefix = vec![0];
-    let root_key = get_random_key_prefix();
     let mut batch_delete = Batch::new();
     let mut remaining_key_values = BTreeMap::new();
     for i in 0..n_entry {
@@ -532,18 +527,17 @@ pub async fn tombstone_triggering_test<C: LocalKeyValueStore>(key_value_store: C
     }
     run_test_batch_from_blank(
         &key_value_store,
-        &root_key,
         key_prefix.clone(),
         batch_insert,
     )
     .await;
     // Deleting them all
     key_value_store
-        .write_batch(&root_key, batch_delete)
+        .write_batch(batch_delete)
         .await
         .unwrap();
     // Reading everything and seeing that it is now cleaned.
-    let key_values = read_key_values_prefix(&key_value_store, &root_key, &key_prefix).await;
+    let key_values = read_key_values_prefix(&key_value_store, &key_prefix).await;
     assert_eq!(key_values, remaining_key_values);
 }
 
@@ -559,7 +553,6 @@ pub async fn run_big_write_read<C: LocalKeyValueStore>(
     value_sizes: Vec<usize>,
 ) {
     let mut rng = make_deterministic_rng();
-    let root_key = get_random_key_prefix();
     for (pos, value_size) in value_sizes.into_iter().enumerate() {
         let n_entry: usize = target_size / value_size;
         let mut batch = Batch::new();
@@ -570,7 +563,7 @@ pub async fn run_big_write_read<C: LocalKeyValueStore>(
             let value = get_random_byte_vector(&mut rng, &[], value_size);
             batch.put_key_value_bytes(key, value);
         }
-        run_test_batch_from_blank(&key_value_store, &root_key, key_prefix, batch).await;
+        run_test_batch_from_blank(&key_value_store, key_prefix, batch).await;
     }
 }
 
@@ -578,7 +571,6 @@ type StateBatch = (Vec<(Vec<u8>, Vec<u8>)>, Batch);
 
 async fn run_test_batch_from_state<C: LocalKeyValueStore>(
     key_value_store: &C,
-    root_key: &[u8],
     key_prefix: Vec<u8>,
     state_and_batch: StateBatch,
 ) {
@@ -590,12 +582,12 @@ async fn run_test_batch_from_state<C: LocalKeyValueStore>(
         batch_insert.put_key_value_bytes(key, value);
     }
     key_value_store
-        .write_batch(root_key, batch_insert)
+        .write_batch(batch_insert)
         .await
         .unwrap();
     update_state_from_batch(&mut kv_state, &batch);
-    key_value_store.write_batch(root_key, batch).await.unwrap();
-    let key_values = read_key_values_prefix(key_value_store, root_key, &key_prefix).await;
+    key_value_store.write_batch(batch).await.unwrap();
+    let key_values = read_key_values_prefix(key_value_store, &key_prefix).await;
     assert_eq!(key_values, kv_state);
 }
 
@@ -673,7 +665,6 @@ fn generate_specific_state_batch(key_prefix: &[u8], option: usize) -> StateBatch
 /// Run some deterministic and random batches operation and check their
 /// correctness
 pub async fn run_writes_from_state<C: LocalKeyValueStore>(key_value_store: &C) {
-    let root_key = get_random_key_prefix();
     for option in 0..7 {
         let key_prefix = if option == 6 {
             vec![255, 255, 255]
@@ -681,7 +672,7 @@ pub async fn run_writes_from_state<C: LocalKeyValueStore>(key_value_store: &C) {
             get_random_key_prefix()
         };
         let state_batch = generate_specific_state_batch(&key_prefix, option);
-        run_test_batch_from_state(key_value_store, &root_key, key_prefix, state_batch).await;
+        run_test_batch_from_state(key_value_store, key_prefix, state_batch).await;
     }
 }
 

@@ -154,12 +154,6 @@ where
     }
 }
 
-pub(crate) fn get_big_key(root_key: &[u8], key: &[u8]) -> Vec<u8> {
-    let mut big_key = root_key.to_vec();
-    big_key.extend(key);
-    big_key
-}
-
 pub(crate) fn from_bytes_option_or_default<V: DeserializeOwned + Default, E>(
     key_opt: &Option<Vec<u8>>,
 ) -> Result<V, E>
