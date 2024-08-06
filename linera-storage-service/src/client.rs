@@ -525,7 +525,8 @@ pub async fn create_service_test_store(
 ) -> Result<ServiceStoreClientInternal, ServiceStoreError> {
     let config = service_config_from_endpoint(endpoint).unwrap();
     let namespace = generate_test_namespace();
-    ServiceStoreClientInternal::connect(&config, &namespace).await
+    let root_key = &[];
+    ServiceStoreClientInternal::connect(&config, &namespace, root_key).await
 }
 
 #[derive(Clone)]

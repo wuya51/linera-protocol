@@ -650,10 +650,6 @@ pub enum RocksDbStoreError {
     /// The database is not coherent
     #[error(transparent)]
     DatabaseConsistencyError(#[from] DatabaseConsistencyError),
-
-    /// Invalid hexadecimal
-    #[error("Invalid hexadecimal: {0}")]
-    Hex(#[from] hex::FromHexError),
 }
 
 impl From<RocksDbStoreError> for crate::views::ViewError {

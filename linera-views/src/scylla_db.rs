@@ -803,7 +803,7 @@ pub struct ScyllaDbStore {
 }
 
 /// The type for building a new ScyllaDB Key Value Store
-#[derive(Clone, Debug)]
+#[derive(Debug)]
 pub struct ScyllaDbStoreConfig {
     /// The url to which the requests have to be sent
     pub uri: String,
