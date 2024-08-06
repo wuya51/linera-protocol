@@ -437,7 +437,8 @@ pub async fn create_rocks_db_test_config() -> (RocksDbStoreConfig, TempDir) {
 pub async fn create_rocks_db_test_store() -> (RocksDbStore, TempDir) {
     let (store_config, dir) = create_rocks_db_test_config().await;
     let namespace = generate_test_namespace();
-    let store = RocksDbStore::recreate_and_connect(&store_config, &namespace)
+    let root_key = &[];
+    let store = RocksDbStore::recreate_and_connect(&store_config, &namespace, root_key)
         .await
         .expect("client");
     (store, dir)

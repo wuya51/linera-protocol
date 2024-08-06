@@ -29,9 +29,10 @@ use linera_views::{
     },
     views::{CryptoHashRootView, HashableView, Hasher, RootView, View, ViewError},
 };
+use linera_views::common::{AdminKeyValueStore as _};
 #[cfg(with_dynamodb)]
 use linera_views::{
-    common::{AdminKeyValueStore as _, CommonStoreConfig},
+    common::{CommonStoreConfig},
     dynamo_db::{
         create_dynamo_db_common_config, DynamoDbContext, DynamoDbStore, DynamoDbStoreConfig,
         LocalStackTestContext,
@@ -205,7 +206,7 @@ impl StateStore for RocksDbTestStore {
         // TODO(#643): Actually acquire a lock.
         tracing::trace!("Acquiring lock on {:?}", id);
         let root_key = bcs::to_bytes(&id)?;
-        let store = self.store.clone_with_root_key(&root_key);
+        let store = self.store.clone_with_root_key(&root_key)?;
         let context = RocksDbContext::new(store, id);
         StateView::load(context).await
     }
@@ -236,8 +237,8 @@ impl StateStore for ScyllaDbTestStore {
         // TODO(#643): Actually acquire a lock.
         tracing::trace!("Acquiring lock on {:?}", id);
         let root_key = bcs::to_bytes(&id)?;
-        let store = self.store.clone_with_root_key(&root_key);
-        let context = ScyllaDbContext::new(store, root_key, id);
+        let store = self.store.clone_with_root_key(&root_key)?;
+        let context = ScyllaDbContext::new(store, id);
         StateView::load(context).await
     }
 }
