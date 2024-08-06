@@ -13,7 +13,7 @@ use linera_views::{
         WriteOperation::{Delete, DeletePrefix, Put},
     },
     collection_view::HashedCollectionView,
-    common::Context,
+    common::{AdminKeyValueStore as _, Context},
     key_value_store_view::{KeyValueStoreMemoryContext, KeyValueStoreView, ViewContainer},
     log_view::HashedLogView,
     lru_caching::{LruCachingMemoryContext, LruCachingStore},
@@ -24,12 +24,11 @@ use linera_views::{
     register_view::HashedRegisterView,
     set_view::HashedSetView,
     test_utils::{
-        self, get_random_byte_vector, get_random_key_value_operations,
-        get_random_key_values, random_shuffle, span_random_reordering_put_delete,
+        self, get_random_byte_vector, get_random_key_value_operations, get_random_key_values,
+        random_shuffle, span_random_reordering_put_delete,
     },
     views::{CryptoHashRootView, HashableView, Hasher, RootView, View, ViewError},
 };
-use linera_views::common::{AdminKeyValueStore as _};
 #[cfg(with_dynamodb)]
 use linera_views::{
     dynamo_db::{

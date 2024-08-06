@@ -106,17 +106,9 @@ where
     K: DirectKeyValueStore + Send + Sync,
 {
     type Error = K::Error;
-    async fn expand_delete_prefix(
-        &self,
-        key_prefix: &[u8],
-    ) -> Result<Vec<Vec<u8>>, Self::Error> {
+    async fn expand_delete_prefix(&self, key_prefix: &[u8]) -> Result<Vec<Vec<u8>>, Self::Error> {
         let mut vector_list = Vec::new();
-        for key in self
-            .store
-            .find_keys_by_prefix(key_prefix)
-            .await?
-            .iterator()
-        {
+        for key in self.store.find_keys_by_prefix(key_prefix).await?.iterator() {
             vector_list.push(key?.to_vec());
         }
         Ok(vector_list)
@@ -139,10 +131,7 @@ where
         self.store.max_stream_queries()
     }
 
-    async fn read_value_bytes(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<Vec<u8>>, K::Error> {
+    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, K::Error> {
         self.store.read_value_bytes(key).await
     }
 
@@ -150,10 +139,7 @@ where
         self.store.contains_key(key).await
     }
 
-    async fn contains_keys(
-        &self,
-        keys: Vec<Vec<u8>>,
-    ) -> Result<Vec<bool>, K::Error> {
+    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, K::Error> {
         self.store.contains_keys(keys).await
     }
 
@@ -164,10 +150,7 @@ where
         self.store.read_multi_values_bytes(keys).await
     }
 
-    async fn find_keys_by_prefix(
-        &self,
-        key_prefix: &[u8],
-    ) -> Result<Self::Keys, K::Error> {
+    async fn find_keys_by_prefix(&self, key_prefix: &[u8]) -> Result<Self::Keys, K::Error> {
         self.store.find_keys_by_prefix(key_prefix).await
     }
 
@@ -175,9 +158,7 @@ where
         &self,
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, K::Error> {
-        self.store
-            .find_key_values_by_prefix(key_prefix)
-            .await
+        self.store.find_key_values_by_prefix(key_prefix).await
     }
 }
 
@@ -188,7 +169,11 @@ where
     type Error = K::Error;
     type Config = K::Config;
 
-    async fn connect(config: &Self::Config, namespace: &str, root_key: &[u8]) -> Result<Self, Self::Error> {
+    async fn connect(
+        config: &Self::Config,
+        namespace: &str,
+        root_key: &[u8],
+    ) -> Result<Self, Self::Error> {
         let store = K::connect(config, namespace, root_key).await?;
         Ok(Self { store })
     }
@@ -280,10 +265,7 @@ where
     ///
     /// (4) `block_key` and `header_key` don't exceed `K::MAX_KEY_SIZE` and `bcs_header`
     /// doesn't exceed `K::MAX_VALUE_SIZE`.
-    async fn coherently_resolve_journal(
-        &self,
-        mut header: JournalHeader,
-    ) -> Result<(), K::Error> {
+    async fn coherently_resolve_journal(&self, mut header: JournalHeader) -> Result<(), K::Error> {
         let header_key = get_journaling_key(KeyTag::Journal as u8, 0)?;
         while header.block_count > 0 {
             let block_key = get_journaling_key(KeyTag::Entry as u8, header.block_count - 1)?;
@@ -347,10 +329,7 @@ where
     /// * Similarly, a transaction must contain at least one block so it is desirable that
     ///   the maximum size of a block insertion `1 + sizeof(block_key) + K::MAX_VALUE_SIZE`
     ///   plus M bytes of overhead doesn't exceed the threshold of condition (2).
-    async fn write_journal(
-        &self,
-        batch: K::Batch,
-    ) -> Result<JournalHeader, K::Error> {
+    async fn write_journal(&self, batch: K::Batch) -> Result<JournalHeader, K::Error> {
         let header_key = get_journaling_key(KeyTag::Journal as u8, 0)?;
         let key_len = header_key.len();
         let header_value_len = bcs::serialized_size(&JournalHeader::default())?;

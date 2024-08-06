@@ -42,8 +42,8 @@ use crate::metering::{
 use crate::{
     batch::{Batch, SimpleUnorderedBatch},
     common::{
-        AdminKeyValueStore, CacheSize, CommonStoreConfig, ContextFromStore, KeyIterable, KeyValueIterable,
-        KeyValueStore, ReadableKeyValueStore, WritableKeyValueStore,
+        AdminKeyValueStore, CacheSize, CommonStoreConfig, ContextFromStore, KeyIterable,
+        KeyValueIterable, KeyValueStore, ReadableKeyValueStore, WritableKeyValueStore,
     },
     journaling::{
         DirectKeyValueStore, DirectWritableKeyValueStore, JournalConsistencyError,
@@ -362,7 +362,11 @@ impl AdminKeyValueStore for DynamoDbStoreInternal {
     type Error = DynamoDbStoreError;
     type Config = DynamoDbStoreConfig;
 
-    async fn connect(config: &Self::Config, namespace: &str, root_key: &[u8]) -> Result<Self, DynamoDbStoreError> {
+    async fn connect(
+        config: &Self::Config,
+        namespace: &str,
+        root_key: &[u8],
+    ) -> Result<Self, DynamoDbStoreError> {
         Self::check_namespace(namespace)?;
         let client = Client::from_conf(config.config.clone());
         let semaphore = config
@@ -863,10 +867,7 @@ impl ReadableKeyValueStore<DynamoDbStoreError> for DynamoDbStoreInternal {
         self.max_stream_queries
     }
 
-    async fn read_value_bytes(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<Vec<u8>>, DynamoDbStoreError> {
+    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, DynamoDbStoreError> {
         ensure!(key.len() <= MAX_KEY_SIZE, DynamoDbStoreError::KeyTooLong);
         let key_db = build_key(&self.root_key, key.to_vec());
         self.read_value_bytes_general(key_db).await
@@ -878,10 +879,7 @@ impl ReadableKeyValueStore<DynamoDbStoreError> for DynamoDbStoreInternal {
         self.contains_key_general(key_db).await
     }
 
-    async fn contains_keys(
-        &self,
-        keys: Vec<Vec<u8>>,
-    ) -> Result<Vec<bool>, DynamoDbStoreError> {
+    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, DynamoDbStoreError> {
         let mut handles = Vec::new();
         for key in keys {
             ensure!(key.len() <= MAX_KEY_SIZE, DynamoDbStoreError::KeyTooLong);
@@ -942,10 +940,7 @@ impl DirectWritableKeyValueStore<DynamoDbStoreError> for DynamoDbStoreInternal {
     // DynamoDB does not support the `DeletePrefix` operation.
     type Batch = SimpleUnorderedBatch;
 
-    async fn write_batch(
-        &self,
-        batch: Self::Batch,
-    ) -> Result<(), DynamoDbStoreError> {
+    async fn write_batch(&self, batch: Self::Batch) -> Result<(), DynamoDbStoreError> {
         let mut builder = TransactionBuilder::new(&self.root_key);
         for key in batch.deletions {
             builder.insert_delete_request(key, self)?;
@@ -995,10 +990,7 @@ impl ReadableKeyValueStore<DynamoDbStoreError> for DynamoDbStore {
         self.store.max_stream_queries()
     }
 
-    async fn read_value_bytes(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<Vec<u8>>, DynamoDbStoreError> {
+    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, DynamoDbStoreError> {
         self.store.read_value_bytes(key).await
     }
 
@@ -1006,10 +998,7 @@ impl ReadableKeyValueStore<DynamoDbStoreError> for DynamoDbStore {
         self.store.contains_key(key).await
     }
 
-    async fn contains_keys(
-        &self,
-        keys: Vec<Vec<u8>>,
-    ) -> Result<Vec<bool>, DynamoDbStoreError> {
+    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, DynamoDbStoreError> {
         self.store.contains_keys(keys).await
     }
 
@@ -1031,9 +1020,7 @@ impl ReadableKeyValueStore<DynamoDbStoreError> for DynamoDbStore {
         &self,
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, DynamoDbStoreError> {
-        self.store
-            .find_key_values_by_prefix(key_prefix)
-            .await
+        self.store.find_key_values_by_prefix(key_prefix).await
     }
 }
 
@@ -1057,7 +1044,11 @@ impl AdminKeyValueStore for DynamoDbStore {
     type Error = DynamoDbStoreError;
     type Config = DynamoDbStoreConfig;
 
-    async fn connect(config: &Self::Config, namespace: &str, root_key: &[u8]) -> Result<Self, DynamoDbStoreError> {
+    async fn connect(
+        config: &Self::Config,
+        namespace: &str,
+        root_key: &[u8],
+    ) -> Result<Self, DynamoDbStoreError> {
         let cache_size = config.common_config.cache_size;
         let simple_store = DynamoDbStoreInternal::connect(config, namespace, root_key).await?;
         let store = JournalingKeyValueStore::new(simple_store);
@@ -1109,10 +1100,20 @@ impl AdminKeyValueStore for DynamoDbStore {
 }
 
 impl DynamoDbStore {
-    fn inner_clone_with_root_key(&self, root_key: &[u8]) -> Result<DynamoDbStoreInternal, DynamoDbStoreError> {
+    fn inner_clone_with_root_key(
+        &self,
+        root_key: &[u8],
+    ) -> Result<DynamoDbStoreInternal, DynamoDbStoreError> {
         #[cfg(with_metrics)]
         {
-            self.store.store.store.store.store.store.store.clone_with_root_key(root_key)
+            self.store
+                .store
+                .store
+                .store
+                .store
+                .store
+                .store
+                .clone_with_root_key(root_key)
         }
         #[cfg(not(with_metrics))]
         {
@@ -1131,7 +1132,6 @@ impl DynamoDbStore {
         }
     }
 }
-
 
 /// An implementation of [`Context`][trait1] based on [`DynamoDbStore`].
 ///

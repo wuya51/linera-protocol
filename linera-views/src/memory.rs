@@ -7,6 +7,7 @@ use std::{
     sync::{Arc, LazyLock, Mutex, RwLock},
 };
 
+use linera_base::ensure;
 use thiserror::Error;
 
 #[cfg(with_testing)]
@@ -14,13 +15,12 @@ use crate::test_utils::generate_test_namespace;
 use crate::{
     batch::{Batch, DeletePrefixExpander, WriteOperation},
     common::{
-        get_interval, AdminKeyValueStore, CacheSize, CommonStoreConfig, Context,
-        ContextFromStore, KeyIterable, KeyValueStore, ReadableKeyValueStore, WritableKeyValueStore,
+        get_interval, AdminKeyValueStore, CacheSize, CommonStoreConfig, Context, ContextFromStore,
+        KeyIterable, KeyValueStore, ReadableKeyValueStore, WritableKeyValueStore,
     },
     value_splitting::DatabaseConsistencyError,
     views::ViewError,
 };
-use linera_base::ensure;
 
 /// The initial configuration of the system
 #[derive(Debug)]
@@ -51,7 +51,7 @@ type MemoryStoreMap = BTreeMap<Vec<u8>, Vec<u8>>;
 /// The container for the `MemoryStopMap` according to the Namespace and Namespace/root_key
 #[derive(Default)]
 struct MemoryStores {
-    stores: BTreeMap<(String,Vec<u8>), Arc<RwLock<MemoryStoreMap>>>,
+    stores: BTreeMap<(String, Vec<u8>), Arc<RwLock<MemoryStoreMap>>>,
     namespaces: BTreeSet<String>,
 }
 
@@ -95,10 +95,7 @@ impl ReadableKeyValueStore<MemoryStoreError> for MemoryStore {
         self.max_stream_queries
     }
 
-    async fn read_value_bytes(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<Vec<u8>>, MemoryStoreError> {
+    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, MemoryStoreError> {
         let map = self
             .map
             .read()
@@ -114,10 +111,7 @@ impl ReadableKeyValueStore<MemoryStoreError> for MemoryStore {
         Ok(map.contains_key(key))
     }
 
-    async fn contains_keys(
-        &self,
-        keys: Vec<Vec<u8>>,
-    ) -> Result<Vec<bool>, MemoryStoreError> {
+    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, MemoryStoreError> {
         let map = self
             .map
             .read()
@@ -221,12 +215,12 @@ impl MemoryStore {
         kill_on_drop: bool,
     ) -> Result<Self, MemoryStoreError> {
         let max_stream_queries = config.common_config.max_stream_queries;
-        ensure!(memory_stores.namespaces.contains(namespace), MemoryStoreError::NotExistentNamespace);
+        ensure!(
+            memory_stores.namespaces.contains(namespace),
+            MemoryStoreError::NotExistentNamespace
+        );
         let pair = (namespace.to_string(), root_key.to_vec());
-        let store = memory_stores
-            .stores
-            .get(&pair)
-            .unwrap();
+        let store = memory_stores.stores.get(&pair).unwrap();
         let map = store.clone();
         let namespace = namespace.to_string();
         let root_key = root_key.to_vec();
@@ -240,7 +234,7 @@ impl MemoryStore {
     }
 
     fn sync_list_all(memory_stores: &MemoryStores) -> Vec<String> {
-        memory_stores.namespaces.iter().map(|x| x.clone()).collect::<Vec<_>>()
+        memory_stores.namespaces.iter().cloned().collect::<Vec<_>>()
     }
 
     fn sync_exists(memory_stores: &MemoryStores, namespace: &str) -> bool {
@@ -255,7 +249,7 @@ impl MemoryStore {
         let namespace = namespace.to_string();
         memory_stores.namespaces.remove(&namespace);
         let mut pair_removes = Vec::new();
-        for (key, _) in &memory_stores.stores {
+        for key in memory_stores.stores.keys() {
             if key.0 == namespace {
                 pair_removes.push(key.clone());
             }
@@ -280,7 +274,11 @@ impl MemoryStore {
     }
 
     /// Creates a `MemoryStore` from a number of queries and a namespace.
-    pub fn new(max_stream_queries: usize, namespace: &str, root_key: &[u8]) -> Result<Self, MemoryStoreError> {
+    pub fn new(
+        max_stream_queries: usize,
+        namespace: &str,
+        root_key: &[u8],
+    ) -> Result<Self, MemoryStoreError> {
         let common_config = CommonStoreConfig {
             max_concurrent_queries: None,
             max_stream_queries,
@@ -319,16 +317,19 @@ impl AdminKeyValueStore for MemoryStore {
     type Error = MemoryStoreError;
     type Config = MemoryStoreConfig;
 
-    async fn connect(config: &Self::Config, namespace: &str, root_key: &[u8]) -> Result<Self, MemoryStoreError> {
+    async fn connect(
+        config: &Self::Config,
+        namespace: &str,
+        root_key: &[u8],
+    ) -> Result<Self, MemoryStoreError> {
         let mut memory_stores = MEMORY_STORES
             .lock()
             .expect("MEMORY_STORES lock should not be poisoned");
         let pair = (namespace.to_string(), root_key.to_vec());
-        if !memory_stores.stores.contains_key(&pair) {
+        memory_stores.stores.entry(pair).or_insert_with(|| {
             let map = MemoryStoreMap::new();
-            let map = Arc::new(RwLock::new(map));
-            memory_stores.stores.insert(pair, map);
-        }
+            Arc::new(RwLock::new(map))
+        });
         let kill_on_drop = false;
         Self::sync_connect(&memory_stores, config, namespace, root_key, kill_on_drop)
     }
@@ -412,7 +413,12 @@ impl<E> MemoryContext<E> {
 
     /// Creates a [`MemoryContext`] for testing.
     #[cfg(with_testing)]
-    pub fn new_for_testing(max_stream_queries: usize, namespace: &str, root_key: &[u8], extra: E) -> Self {
+    pub fn new_for_testing(
+        max_stream_queries: usize,
+        namespace: &str,
+        root_key: &[u8],
+        extra: E,
+    ) -> Self {
         let store = MemoryStore::new_for_testing(max_stream_queries, namespace, root_key).unwrap();
         let base_key = Vec::new();
         Self {
@@ -473,10 +479,7 @@ impl From<MemoryStoreError> for ViewError {
 impl DeletePrefixExpander for MemoryContext<()> {
     type Error = MemoryStoreError;
 
-    async fn expand_delete_prefix(
-        &self,
-        key_prefix: &[u8],
-    ) -> Result<Vec<Vec<u8>>, Self::Error> {
+    async fn expand_delete_prefix(&self, key_prefix: &[u8]) -> Result<Vec<Vec<u8>>, Self::Error> {
         let mut vector_list = Vec::new();
         for key in <Vec<Vec<u8>> as KeyIterable<Self::Error>>::iterator(
             &self.find_keys_by_prefix(key_prefix).await?,

@@ -396,7 +396,7 @@ const MAX_KEY_SIZE: usize = 1048576;
 pub struct ScyllaDbStoreInternal {
     store: Arc<ScyllaDbClient>,
     semaphore: Option<Arc<Semaphore>>,
-    max_stream_queries : usize,
+    max_stream_queries: usize,
     cache_size: usize,
     root_key: Vec<u8>,
 }
@@ -463,25 +463,23 @@ impl ReadableKeyValueStore<ScyllaDbStoreError> for ScyllaDbStoreInternal {
         self.max_stream_queries
     }
 
-    async fn read_value_bytes(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<Vec<u8>>, ScyllaDbStoreError> {
+    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, ScyllaDbStoreError> {
         let store = self.store.deref();
         let _guard = self.acquire().await;
-        store.read_value_internal(&self.root_key, key.to_vec()).await
+        store
+            .read_value_internal(&self.root_key, key.to_vec())
+            .await
     }
 
     async fn contains_key(&self, key: &[u8]) -> Result<bool, ScyllaDbStoreError> {
         let store = self.store.deref();
         let _guard = self.acquire().await;
-        store.contains_key_internal(&self.root_key, key.to_vec()).await
+        store
+            .contains_key_internal(&self.root_key, key.to_vec())
+            .await
     }
 
-    async fn contains_keys(
-        &self,
-        keys: Vec<Vec<u8>>,
-    ) -> Result<Vec<bool>, ScyllaDbStoreError> {
+    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, ScyllaDbStoreError> {
         if keys.is_empty() {
             return Ok(Vec::new());
         }
@@ -558,10 +556,7 @@ impl DirectWritableKeyValueStore<ScyllaDbStoreError> for ScyllaDbStoreInternal {
     // https://github.com/scylladb/scylladb/blob/master/docs/dev/timestamp-conflict-resolution.md
     type Batch = UnorderedBatch;
 
-    async fn write_batch(
-        &self,
-        batch: Self::Batch,
-    ) -> Result<(), ScyllaDbStoreError> {
+    async fn write_batch(&self, batch: Self::Batch) -> Result<(), ScyllaDbStoreError> {
         let store = self.store.deref();
         let _guard = self.acquire().await;
         store.write_batch_internal(&self.root_key, batch).await
@@ -572,7 +567,11 @@ impl AdminKeyValueStore for ScyllaDbStoreInternal {
     type Error = ScyllaDbStoreError;
     type Config = ScyllaDbStoreConfig;
 
-    async fn connect(config: &Self::Config, namespace: &str, root_key: &[u8]) -> Result<Self, ScyllaDbStoreError> {
+    async fn connect(
+        config: &Self::Config,
+        namespace: &str,
+        root_key: &[u8],
+    ) -> Result<Self, ScyllaDbStoreError> {
         Self::check_namespace(namespace)?;
         let session = SessionBuilder::new()
             .known_node(config.uri.as_str())
@@ -603,7 +602,13 @@ impl AdminKeyValueStore for ScyllaDbStoreInternal {
         let max_stream_queries = self.max_stream_queries;
         let cache_size = self.cache_size;
         let root_key = root_key.to_vec();
-        Ok(Self { store, semaphore, max_stream_queries, cache_size, root_key })
+        Ok(Self {
+            store,
+            semaphore,
+            max_stream_queries,
+            cache_size,
+            root_key,
+        })
     }
 
     async fn list_all(config: &Self::Config) -> Result<Vec<String>, ScyllaDbStoreError> {
@@ -805,7 +810,6 @@ impl CacheSize for ScyllaDbStoreConfig {
     }
 }
 
-
 impl ReadableKeyValueStore<ScyllaDbStoreError> for ScyllaDbStore {
     const MAX_KEY_SIZE: usize = ScyllaDbStoreInternal::MAX_KEY_SIZE;
 
@@ -818,10 +822,7 @@ impl ReadableKeyValueStore<ScyllaDbStoreError> for ScyllaDbStore {
         self.store.max_stream_queries()
     }
 
-    async fn read_value_bytes(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<Vec<u8>>, ScyllaDbStoreError> {
+    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, ScyllaDbStoreError> {
         self.store.read_value_bytes(key).await
     }
 
@@ -829,10 +830,7 @@ impl ReadableKeyValueStore<ScyllaDbStoreError> for ScyllaDbStore {
         self.store.contains_key(key).await
     }
 
-    async fn contains_keys(
-        &self,
-        keys: Vec<Vec<u8>>,
-    ) -> Result<Vec<bool>, ScyllaDbStoreError> {
+    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, ScyllaDbStoreError> {
         self.store.contains_keys(keys).await
     }
 
@@ -857,9 +855,7 @@ impl ReadableKeyValueStore<ScyllaDbStoreError> for ScyllaDbStore {
         &self,
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, ScyllaDbStoreError> {
-        self.store
-            .find_key_values_by_prefix(key_prefix)
-            .await
+        self.store.find_key_values_by_prefix(key_prefix).await
     }
 }
 
@@ -879,7 +875,11 @@ impl AdminKeyValueStore for ScyllaDbStore {
     type Error = ScyllaDbStoreError;
     type Config = ScyllaDbStoreConfig;
 
-    async fn connect(config: &Self::Config, namespace: &str, root_key: &[u8]) -> Result<Self, ScyllaDbStoreError> {
+    async fn connect(
+        config: &Self::Config,
+        namespace: &str,
+        root_key: &[u8],
+    ) -> Result<Self, ScyllaDbStoreError> {
         let cache_size = config.common_config.cache_size;
         let simple_store = ScyllaDbStoreInternal::connect(config, namespace, root_key).await?;
         let store = JournalingKeyValueStore::new(simple_store);
@@ -941,10 +941,18 @@ impl ScyllaDbStore {
         }
     }
 
-    fn inner_clone_with_root_key(&self, root_key: &[u8]) -> Result<ScyllaDbStoreInternal, ScyllaDbStoreError> {
+    fn inner_clone_with_root_key(
+        &self,
+        root_key: &[u8],
+    ) -> Result<ScyllaDbStoreInternal, ScyllaDbStoreError> {
         #[cfg(with_metrics)]
         {
-            self.store.store.store.store.store.clone_with_root_key(root_key)
+            self.store
+                .store
+                .store
+                .store
+                .store
+                .clone_with_root_key(root_key)
         }
         #[cfg(not(with_metrics))]
         {

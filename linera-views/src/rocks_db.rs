@@ -70,8 +70,6 @@ impl CacheSize for RocksDbStoreConfig {
     }
 }
 
-
-
 impl RocksDbStoreInternal {
     fn check_namespace(namespace: &str) -> Result<(), RocksDbStoreError> {
         if !namespace
@@ -83,7 +81,12 @@ impl RocksDbStoreInternal {
         Ok(())
     }
 
-    fn connect_from_path(path_buf: PathBuf, max_stream_queries: usize, cache_size: usize, root_key: &[u8]) -> Result<RocksDbStoreInternal, RocksDbStoreError> {
+    fn connect_from_path(
+        path_buf: PathBuf,
+        max_stream_queries: usize,
+        cache_size: usize,
+        root_key: &[u8],
+    ) -> Result<RocksDbStoreInternal, RocksDbStoreError> {
         let mut full_path_buf = path_buf.clone();
         full_path_buf.push(root_key_as_string(root_key));
         if !std::path::Path::exists(&full_path_buf) {
@@ -99,8 +102,6 @@ impl RocksDbStoreInternal {
             cache_size,
         })
     }
-
-
 }
 
 impl ReadableKeyValueStore<RocksDbStoreError> for RocksDbStoreInternal {
@@ -112,10 +113,7 @@ impl ReadableKeyValueStore<RocksDbStoreError> for RocksDbStoreInternal {
         self.max_stream_queries
     }
 
-    async fn read_value_bytes(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<Vec<u8>>, RocksDbStoreError> {
+    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, RocksDbStoreError> {
         ensure!(key.len() <= MAX_KEY_SIZE, RocksDbStoreError::KeyTooLong);
         let client = self.clone();
         let key = key.to_vec();
@@ -135,10 +133,7 @@ impl ReadableKeyValueStore<RocksDbStoreError> for RocksDbStoreInternal {
         Ok(self.read_value_bytes(key).await?.is_some())
     }
 
-    async fn contains_keys(
-        &self,
-        keys: Vec<Vec<u8>>,
-    ) -> Result<Vec<bool>, RocksDbStoreError> {
+    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, RocksDbStoreError> {
         let size = keys.len();
         let mut results = vec![false; size];
         let mut handles = Vec::new();
@@ -246,10 +241,7 @@ impl ReadableKeyValueStore<RocksDbStoreError> for RocksDbStoreInternal {
 impl WritableKeyValueStore<RocksDbStoreError> for RocksDbStoreInternal {
     const MAX_VALUE_SIZE: usize = MAX_VALUE_SIZE;
 
-    async fn write_batch(
-        &self,
-        mut batch: Batch,
-    ) -> Result<(), RocksDbStoreError> {
+    async fn write_batch(&self, mut batch: Batch) -> Result<(), RocksDbStoreError> {
         let client = self.clone();
         // NOTE: The delete_range functionality of RocksDB needs to have an upper bound in order to work.
         // Thus in order to have the system working, we need to handle the unlikely case of having to
@@ -314,7 +306,11 @@ impl AdminKeyValueStore for RocksDbStoreInternal {
     type Error = RocksDbStoreError;
     type Config = RocksDbStoreConfig;
 
-    async fn connect(config: &Self::Config, namespace: &str, root_key: &[u8]) -> Result<Self, RocksDbStoreError> {
+    async fn connect(
+        config: &Self::Config,
+        namespace: &str,
+        root_key: &[u8],
+    ) -> Result<Self, RocksDbStoreError> {
         Self::check_namespace(namespace)?;
         let mut path_buf = config.path_buf.clone();
         path_buf.push(namespace);
@@ -459,10 +455,19 @@ impl RocksDbStore {
         }
     }
 
-    fn inner_clone_with_root_key(&self, root_key: &[u8]) -> Result<RocksDbStoreInternal, RocksDbStoreError> {
+    fn inner_clone_with_root_key(
+        &self,
+        root_key: &[u8],
+    ) -> Result<RocksDbStoreInternal, RocksDbStoreError> {
         #[cfg(with_metrics)]
         {
-            self.store.store.store.store.store.store.clone_with_root_key(root_key)
+            self.store
+                .store
+                .store
+                .store
+                .store
+                .store
+                .clone_with_root_key(root_key)
         }
         #[cfg(not(with_metrics))]
         {
@@ -470,8 +475,6 @@ impl RocksDbStore {
         }
     }
 }
-
-
 
 impl ReadableKeyValueStore<RocksDbStoreError> for RocksDbStore {
     const MAX_KEY_SIZE: usize = MAX_KEY_SIZE;
@@ -482,10 +485,7 @@ impl ReadableKeyValueStore<RocksDbStoreError> for RocksDbStore {
         self.store.max_stream_queries()
     }
 
-    async fn read_value_bytes(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<Vec<u8>>, RocksDbStoreError> {
+    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, RocksDbStoreError> {
         self.store.read_value_bytes(key).await
     }
 
@@ -493,10 +493,7 @@ impl ReadableKeyValueStore<RocksDbStoreError> for RocksDbStore {
         self.store.contains_key(key).await
     }
 
-    async fn contains_keys(
-        &self,
-        keys: Vec<Vec<u8>>,
-    ) -> Result<Vec<bool>, RocksDbStoreError> {
+    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, RocksDbStoreError> {
         self.store.contains_keys(keys).await
     }
 
@@ -518,9 +515,7 @@ impl ReadableKeyValueStore<RocksDbStoreError> for RocksDbStore {
         &self,
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, RocksDbStoreError> {
-        self.store
-            .find_key_values_by_prefix(key_prefix)
-            .await
+        self.store.find_key_values_by_prefix(key_prefix).await
     }
 }
 
@@ -540,7 +535,11 @@ impl AdminKeyValueStore for RocksDbStore {
     type Error = RocksDbStoreError;
     type Config = RocksDbStoreConfig;
 
-    async fn connect(config: &Self::Config, namespace: &str, root_key: &[u8]) -> Result<Self, RocksDbStoreError> {
+    async fn connect(
+        config: &Self::Config,
+        namespace: &str,
+        root_key: &[u8],
+    ) -> Result<Self, RocksDbStoreError> {
         let store = RocksDbStoreInternal::connect(config, namespace, root_key).await?;
         let cache_size = config.common_config.cache_size;
         #[cfg(with_metrics)]

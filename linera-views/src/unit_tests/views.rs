@@ -259,7 +259,8 @@ impl TestContextFactory for DynamoDbContextFactory {
             config,
             common_config,
         };
-        let store = DynamoDbStore::recreate_and_connect(&store_config, &namespace, root_key).await?;
+        let store =
+            DynamoDbStore::recreate_and_connect(&store_config, &namespace, root_key).await?;
         Ok(DynamoDbContext::new(store, ()))
     }
 }

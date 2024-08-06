@@ -369,22 +369,13 @@ pub trait LocalReadableKeyValueStore<E> {
     async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, E>;
 
     /// Retrieves multiple `Vec<u8>` from the database using the provided `keys`.
-    async fn read_multi_values_bytes(
-        &self,
-        keys: Vec<Vec<u8>>,
-    ) -> Result<Vec<Option<Vec<u8>>>, E>;
+    async fn read_multi_values_bytes(&self, keys: Vec<Vec<u8>>) -> Result<Vec<Option<Vec<u8>>>, E>;
 
     /// Finds the `key` matching the prefix. The prefix is not included in the returned keys.
-    async fn find_keys_by_prefix(
-        &self,
-        key_prefix: &[u8],
-    ) -> Result<Self::Keys, E>;
+    async fn find_keys_by_prefix(&self, key_prefix: &[u8]) -> Result<Self::Keys, E>;
 
     /// Finds the `(key,value)` pairs matching the prefix. The prefix is not included in the returned keys.
-    async fn find_key_values_by_prefix(
-        &self,
-        key_prefix: &[u8],
-    ) -> Result<Self::KeyValues, E>;
+    async fn find_key_values_by_prefix(&self, key_prefix: &[u8]) -> Result<Self::KeyValues, E>;
 
     // We can't use `async fn` here in the below implementations due to
     // https://github.com/rust-lang/impl-trait-utils/issues/17, but once that bug is fixed
@@ -441,7 +432,6 @@ pub trait CacheSize {
     fn cache_size(&self) -> usize;
 }
 
-
 /// Low-level trait for the administration of stores and their namespaces.
 #[trait_variant::make(AdminKeyValueStore: Send)]
 pub trait LocalAdminKeyValueStore: Sized {
@@ -452,7 +442,11 @@ pub trait LocalAdminKeyValueStore: Sized {
     type Config: Send + Sync + CacheSize;
 
     /// Connects to an existing namespace using the given configuration.
-    async fn connect(config: &Self::Config, namespace: &str, root_key: &[u8]) -> Result<Self, Self::Error>;
+    async fn connect(
+        config: &Self::Config,
+        namespace: &str,
+        root_key: &[u8],
+    ) -> Result<Self, Self::Error>;
 
     /// Take a connection and create a new one with a different `root_key`.
     fn clone_with_root_key(&self, root_key: &[u8]) -> Result<Self, Self::Error>;
@@ -839,11 +833,7 @@ where
     }
 
     async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, Self::Error> {
-        log_time_async(
-            self.store.read_value_bytes(key),
-            "read_value_bytes",
-        )
-        .await
+        log_time_async(self.store.read_value_bytes(key), "read_value_bytes").await
     }
 
     async fn contains_key(&self, key: &[u8]) -> Result<bool, Self::Error> {
@@ -851,11 +841,7 @@ where
     }
 
     async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, Self::Error> {
-        log_time_async(
-            self.store.contains_keys(keys),
-            "contains_keys",
-        )
-        .await
+        log_time_async(self.store.contains_keys(keys), "contains_keys").await
     }
 
     async fn read_multi_values_bytes(
@@ -882,8 +868,7 @@ where
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, Self::Error> {
         log_time_async(
-            self.store
-                .find_key_values_by_prefix(key_prefix),
+            self.store.find_key_values_by_prefix(key_prefix),
             "find_key_values_by_prefix",
         )
         .await

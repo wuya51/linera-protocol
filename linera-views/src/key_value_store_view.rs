@@ -1094,10 +1094,7 @@ where
         1
     }
 
-    async fn read_value_bytes(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<Vec<u8>>, ViewError> {
+    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, ViewError> {
         let view = self.view.read().await;
         view.get(key).await
     }
@@ -1107,10 +1104,7 @@ where
         view.contains_key(key).await
     }
 
-    async fn contains_keys(
-        &self,
-        keys: Vec<Vec<u8>>,
-    ) -> Result<Vec<bool>, ViewError> {
+    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, ViewError> {
         let view = self.view.read().await;
         view.contains_keys(keys).await
     }
@@ -1123,10 +1117,7 @@ where
         view.multi_get(keys).await
     }
 
-    async fn find_keys_by_prefix(
-        &self,
-        key_prefix: &[u8],
-    ) -> Result<Self::Keys, ViewError> {
+    async fn find_keys_by_prefix(&self, key_prefix: &[u8]) -> Result<Self::Keys, ViewError> {
         let view = self.view.read().await;
         view.find_keys_by_prefix(key_prefix).await
     }
@@ -1184,10 +1175,6 @@ where
         Ok(Self { view })
     }
 }
-
-
-
-
 
 /// A context that stores all values in memory.
 #[cfg(with_testing)]

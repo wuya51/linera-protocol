@@ -60,10 +60,7 @@ where
         self.store.max_stream_queries()
     }
 
-    async fn read_value_bytes(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<Vec<u8>>, K::Error> {
+    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, K::Error> {
         let mut big_key = key.to_vec();
         big_key.extend(&[0, 0, 0, 0]);
         let value = self.store.read_value_bytes(&big_key).await?;
@@ -80,10 +77,7 @@ where
             let big_key_segment = Self::get_segment_key(key, i)?;
             big_keys.push(big_key_segment);
         }
-        let segments = self
-            .store
-            .read_multi_values_bytes(big_keys)
-            .await?;
+        let segments = self.store.read_multi_values_bytes(big_keys).await?;
         for segment in segments {
             match segment {
                 None => {
@@ -103,10 +97,7 @@ where
         self.store.contains_key(&big_key).await
     }
 
-    async fn contains_keys(
-        &self,
-        keys: Vec<Vec<u8>>,
-    ) -> Result<Vec<bool>, K::Error> {
+    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, K::Error> {
         let big_keys = keys
             .into_iter()
             .map(|key| {
@@ -128,10 +119,7 @@ where
             big_key.extend(&[0, 0, 0, 0]);
             big_keys.push(big_key);
         }
-        let values = self
-            .store
-            .read_multi_values_bytes(big_keys)
-            .await?;
+        let values = self.store.read_multi_values_bytes(big_keys).await?;
         let mut big_values = Vec::<Option<Vec<u8>>>::new();
         let mut keys_add = Vec::new();
         let mut n_blocks = Vec::new();
@@ -174,17 +162,9 @@ where
         Ok(big_values)
     }
 
-    async fn find_keys_by_prefix(
-        &self,
-        key_prefix: &[u8],
-    ) -> Result<Self::Keys, K::Error> {
+    async fn find_keys_by_prefix(&self, key_prefix: &[u8]) -> Result<Self::Keys, K::Error> {
         let mut keys = Vec::new();
-        for big_key in self
-            .store
-            .find_keys_by_prefix(key_prefix)
-            .await?
-            .iterator()
-        {
+        for big_key in self.store.find_keys_by_prefix(key_prefix).await?.iterator() {
             let big_key = big_key?;
             let len = big_key.len();
             if Self::read_index_from_key(big_key)? == 0 {
@@ -199,10 +179,7 @@ where
         &self,
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, K::Error> {
-        let small_key_values = self
-            .store
-            .find_key_values_by_prefix(key_prefix)
-            .await?;
+        let small_key_values = self.store.find_key_values_by_prefix(key_prefix).await?;
         let mut small_kv_iterator = small_key_values.into_iterator_owned();
         let mut key_values = Vec::new();
         while let Some(result) = small_kv_iterator.next() {
@@ -284,7 +261,11 @@ where
     type Error = K::Error;
     type Config = K::Config;
 
-    async fn connect(config: &Self::Config, namespace: &str, root_key: &[u8]) -> Result<Self, Self::Error> {
+    async fn connect(
+        config: &Self::Config,
+        namespace: &str,
+        root_key: &[u8],
+    ) -> Result<Self, Self::Error> {
         let store = K::connect(config, namespace, root_key).await?;
         Ok(Self { store })
     }
@@ -394,10 +375,7 @@ impl ReadableKeyValueStore<MemoryStoreError> for LimitedTestMemoryStore {
         TEST_MEMORY_MAX_STREAM_QUERIES
     }
 
-    async fn read_value_bytes(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<Vec<u8>>, MemoryStoreError> {
+    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, MemoryStoreError> {
         self.store.read_value_bytes(key).await
     }
 
@@ -405,10 +383,7 @@ impl ReadableKeyValueStore<MemoryStoreError> for LimitedTestMemoryStore {
         self.store.contains_key(key).await
     }
 
-    async fn contains_keys(
-        &self,
-        keys: Vec<Vec<u8>>,
-    ) -> Result<Vec<bool>, MemoryStoreError> {
+    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, MemoryStoreError> {
         self.store.contains_keys(keys).await
     }
 
@@ -419,10 +394,7 @@ impl ReadableKeyValueStore<MemoryStoreError> for LimitedTestMemoryStore {
         self.store.read_multi_values_bytes(keys).await
     }
 
-    async fn find_keys_by_prefix(
-        &self,
-        key_prefix: &[u8],
-    ) -> Result<Self::Keys, MemoryStoreError> {
+    async fn find_keys_by_prefix(&self, key_prefix: &[u8]) -> Result<Self::Keys, MemoryStoreError> {
         self.store.find_keys_by_prefix(key_prefix).await
     }
 
@@ -430,9 +402,7 @@ impl ReadableKeyValueStore<MemoryStoreError> for LimitedTestMemoryStore {
         &self,
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, MemoryStoreError> {
-        self.store
-            .find_key_values_by_prefix(key_prefix)
-            .await
+        self.store.find_key_values_by_prefix(key_prefix).await
     }
 }
 
@@ -467,7 +437,8 @@ impl LimitedTestMemoryStore {
         let namespace = generate_test_namespace();
         let root_key = &[];
         let store =
-            MemoryStore::new_for_testing(TEST_MEMORY_MAX_STREAM_QUERIES, &namespace, root_key).unwrap();
+            MemoryStore::new_for_testing(TEST_MEMORY_MAX_STREAM_QUERIES, &namespace, root_key)
+                .unwrap();
         LimitedTestMemoryStore { store }
     }
 }
@@ -540,10 +511,7 @@ mod tests {
             let mut bytes = bcs::to_bytes(&index).unwrap();
             bytes.reverse();
             segment_key.extend(bytes);
-            let value_read = store
-                .read_value_bytes(&&segment_key)
-                .await
-                .unwrap();
+            let value_read = store.read_value_bytes(&segment_key).await.unwrap();
             let Some(value_read) = value_read else {
                 unreachable!()
             };
@@ -576,10 +544,7 @@ mod tests {
         batch.delete_key(key.clone());
         big_store.write_batch(batch).await.unwrap();
         // reading everything (there are leftover keys)
-        let key_values = big_store
-            .find_key_values_by_prefix(&[0])
-            .await
-            .unwrap();
+        let key_values = big_store.find_key_values_by_prefix(&[0]).await.unwrap();
         assert_eq!(key_values.len(), 0);
         // Two segments remain
         let keys = store.find_keys_by_prefix(&[0]).await.unwrap();

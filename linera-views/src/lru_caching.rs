@@ -24,7 +24,8 @@ use {
 use crate::{
     batch::{Batch, WriteOperation},
     common::{
-        get_interval, AdminKeyValueStore, CacheSize, KeyValueStore, ReadableKeyValueStore, WritableKeyValueStore,
+        get_interval, AdminKeyValueStore, CacheSize, KeyValueStore, ReadableKeyValueStore,
+        WritableKeyValueStore,
     },
 };
 
@@ -124,10 +125,7 @@ where
         self.store.max_stream_queries()
     }
 
-    async fn read_value_bytes(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<Vec<u8>>, K::Error> {
+    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, K::Error> {
         let Some(lru_read_values) = &self.lru_read_values else {
             return self.store.read_value_bytes(key).await;
         };
@@ -158,10 +156,7 @@ where
         self.store.contains_key(key).await
     }
 
-    async fn contains_keys(
-        &self,
-        keys: Vec<Vec<u8>>,
-    ) -> Result<Vec<bool>, K::Error> {
+    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, K::Error> {
         let Some(values) = &self.lru_read_values else {
             return self.store.contains_keys(keys).await;
         };
@@ -229,10 +224,7 @@ where
         Ok(result)
     }
 
-    async fn find_keys_by_prefix(
-        &self,
-        key_prefix: &[u8],
-    ) -> Result<Self::Keys, K::Error> {
+    async fn find_keys_by_prefix(&self, key_prefix: &[u8]) -> Result<Self::Keys, K::Error> {
         self.store.find_keys_by_prefix(key_prefix).await
     }
 
@@ -240,9 +232,7 @@ where
         &self,
         key_prefix: &[u8],
     ) -> Result<Self::KeyValues, K::Error> {
-        self.store
-            .find_key_values_by_prefix(key_prefix)
-            .await
+        self.store.find_key_values_by_prefix(key_prefix).await
     }
 }
 
@@ -290,7 +280,6 @@ fn get_lru_prefix_cache(cache_size: usize) -> Option<Arc<Mutex<LruPrefixCache>>>
     }
 }
 
-
 impl<K> AdminKeyValueStore for LruCachingStore<K>
 where
     K: AdminKeyValueStore + Send + Sync,
@@ -298,11 +287,19 @@ where
     type Error = K::Error;
     type Config = K::Config;
 
-    async fn connect(config: &Self::Config, namespace: &str, root_key: &[u8]) -> Result<Self, Self::Error> {
+    async fn connect(
+        config: &Self::Config,
+        namespace: &str,
+        root_key: &[u8],
+    ) -> Result<Self, Self::Error> {
         let cache_size = config.cache_size();
         let lru_read_values = get_lru_prefix_cache(cache_size);
         let store = K::connect(config, namespace, root_key).await?;
-        Ok(Self { store, lru_read_values, cache_size })
+        Ok(Self {
+            store,
+            lru_read_values,
+            cache_size,
+        })
     }
 
     fn clone_with_root_key(&self, root_key: &[u8]) -> Result<Self, Self::Error> {
@@ -310,7 +307,11 @@ where
         // The cloning starts with an empty cache.
         let lru_read_values = get_lru_prefix_cache(cache_size);
         let store = self.store.clone_with_root_key(root_key)?;
-        Ok(Self { store, lru_read_values, cache_size })
+        Ok(Self {
+            store,
+            lru_read_values,
+            cache_size,
+        })
     }
 
     async fn list_all(config: &Self::Config) -> Result<Vec<String>, Self::Error> {
@@ -334,8 +335,6 @@ where
     }
 }
 
-
-
 impl<K> KeyValueStore for LruCachingStore<K>
 where
     K: KeyValueStore + Send + Sync,
@@ -350,7 +349,11 @@ where
     /// Creates a new key-value store that provides LRU caching at top of the given store.
     pub fn new(store: K, cache_size: usize) -> Self {
         let lru_read_values = get_lru_prefix_cache(cache_size);
-        Self { store, lru_read_values, cache_size }
+        Self {
+            store,
+            lru_read_values,
+            cache_size,
+        }
     }
 }
 
@@ -370,9 +373,10 @@ impl<E> LruCachingMemoryContext<E> {
         let config = MemoryStoreConfig { common_config };
         let namespace = "linera";
         let root_key = &[];
-        let store = LruCachingStore::<MemoryStore>::maybe_create_and_connect(&config, namespace, root_key)
-            .await
-            .expect("store");
+        let store =
+            LruCachingStore::<MemoryStore>::maybe_create_and_connect(&config, namespace, root_key)
+                .await
+                .expect("store");
         let base_key = Vec::new();
         Ok(Self {
             store,
