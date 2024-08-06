@@ -313,10 +313,6 @@ where
         Ok(Self { store, lru_read_values, cache_size })
     }
 
-    fn root_key(&self) -> &[u8] {
-        self.store.root_key()
-    }
-
     async fn list_all(config: &Self::Config) -> Result<Vec<String>, Self::Error> {
         K::list_all(config).await
     }

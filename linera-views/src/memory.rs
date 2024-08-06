@@ -349,10 +349,6 @@ impl AdminKeyValueStore for MemoryStore {
         Self::sync_connect(&memory_stores, &config, namespace, root_key, kill_on_drop)
     }
 
-    fn root_key(&self) -> &[u8] {
-        &self.root_key
-    }
-
     async fn list_all(_config: &Self::Config) -> Result<Vec<String>, MemoryStoreError> {
         let memory_stores = MEMORY_STORES
             .lock()

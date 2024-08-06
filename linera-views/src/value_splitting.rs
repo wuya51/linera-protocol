@@ -294,10 +294,6 @@ where
         Ok(Self { store })
     }
 
-    fn root_key(&self) -> &[u8] {
-        self.store.root_key()
-    }
-
     async fn list_all(config: &Self::Config) -> Result<Vec<String>, Self::Error> {
         K::list_all(config).await
     }

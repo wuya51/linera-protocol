@@ -457,9 +457,6 @@ pub trait LocalAdminKeyValueStore: Sized {
     /// Take a connection and create a new one with a different `root_key`.
     fn clone_with_root_key(&self, root_key: &[u8]) -> Result<Self, Self::Error>;
 
-    /// Obtain the `root_key`.
-    fn root_key(&self) -> &[u8];
-
     /// Obtains the list of existing namespaces.
     async fn list_all(config: &Self::Config) -> Result<Vec<String>, Self::Error>;
 
