@@ -208,7 +208,7 @@ impl WritableKeyValueStore<MemoryStoreError> for MemoryStore {
 
 impl MemoryStore {
     fn sync_connect(
-        memory_stores: &MemoryStores,
+        memory_stores: &mut MemoryStores,
         config: &MemoryStoreConfig,
         namespace: &str,
         root_key: &[u8],
@@ -220,7 +220,10 @@ impl MemoryStore {
             MemoryStoreError::NotExistentNamespace
         );
         let pair = (namespace.to_string(), root_key.to_vec());
-        let store = memory_stores.stores.get(&pair).unwrap();
+        let store = memory_stores.stores.entry(pair).or_insert_with(|| {
+            let map = MemoryStoreMap::new();
+            Arc::new(RwLock::new(map))
+        });
         let map = store.clone();
         let namespace = namespace.to_string();
         let root_key = root_key.to_vec();
@@ -270,7 +273,7 @@ impl MemoryStore {
         if !MemoryStore::sync_exists(&memory_stores, namespace) {
             MemoryStore::sync_create(&mut memory_stores, namespace);
         }
-        MemoryStore::sync_connect(&memory_stores, config, namespace, root_key, kill_on_drop)
+        MemoryStore::sync_connect(&mut memory_stores, config, namespace, root_key, kill_on_drop)
     }
 
     /// Creates a `MemoryStore` from a number of queries and a namespace.
@@ -325,13 +328,8 @@ impl AdminKeyValueStore for MemoryStore {
         let mut memory_stores = MEMORY_STORES
             .lock()
             .expect("MEMORY_STORES lock should not be poisoned");
-        let pair = (namespace.to_string(), root_key.to_vec());
-        memory_stores.stores.entry(pair).or_insert_with(|| {
-            let map = MemoryStoreMap::new();
-            Arc::new(RwLock::new(map))
-        });
         let kill_on_drop = false;
-        Self::sync_connect(&memory_stores, config, namespace, root_key, kill_on_drop)
+        Self::sync_connect(&mut memory_stores, config, namespace, root_key, kill_on_drop)
     }
 
     fn clone_with_root_key(&self, root_key: &[u8]) -> Result<Self, MemoryStoreError> {
@@ -342,12 +340,12 @@ impl AdminKeyValueStore for MemoryStore {
             cache_size: 1000,
         };
         let config = MemoryStoreConfig { common_config };
-        let memory_stores = MEMORY_STORES
+        let mut memory_stores = MEMORY_STORES
             .lock()
             .expect("MEMORY_STORES lock should not be poisoned");
         let kill_on_drop = self.kill_on_drop;
         let namespace = &self.namespace;
-        Self::sync_connect(&memory_stores, &config, namespace, root_key, kill_on_drop)
+        Self::sync_connect(&mut memory_stores, &config, namespace, root_key, kill_on_drop)
     }
 
     async fn list_all(_config: &Self::Config) -> Result<Vec<String>, MemoryStoreError> {
