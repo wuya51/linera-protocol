@@ -780,12 +780,24 @@ pub struct BlobContent {
 }
 
 impl BlobContent {
+    /// Creates a new [`BlobContent`] from the provided bytes.
+    pub fn new(bytes: Vec<u8>) -> Self {
+        BlobContent { bytes }
+    }
+
     /// Creates a [`BlobContent`] from a string for testing purposes.
     #[cfg(with_testing)]
     pub fn test_blob_content(content: &str) -> Self {
         BlobContent {
             bytes: content.as_bytes().to_vec(),
         }
+    }
+
+    /// Loads blob content from a file.
+    pub async fn load_from_file(path: impl AsRef<Path>) -> io::Result<Self> {
+        Ok(BlobContent {
+            bytes: fs::read(path)?,
+        })
     }
 
     /// Creates a `Blob` without checking that this is the correct `BlobId`.
@@ -800,6 +812,7 @@ impl BlobContent {
     pub fn with_blob_id_checked(self, blob_id: BlobId) -> Option<Blob> {
         let blob = match blob_id.blob_type {
             BlobType::Data => self.with_data_blob_id(),
+            BlobType::Bytecode => self.with_bytecode_blob_id(),
         };
 
         if blob.id() == blob_id {
@@ -809,9 +822,15 @@ impl BlobContent {
         }
     }
 
-    /// Creates a `Blob` by hashing `self`.
+    /// Creates a data `Blob` by hashing `self`.
     pub fn with_data_blob_id(self) -> Blob {
         let id = BlobId::new_data(&self);
+        Blob { id, content: self }
+    }
+
+    /// Creates a bytecode `Blob` by hashing `self`.
+    pub fn with_bytecode_blob_id(self) -> Blob {
+        let id = BlobId::new_bytecode(&self);
         Blob { id, content: self }
     }
 }
@@ -834,12 +853,25 @@ pub struct Blob {
 }
 
 impl Blob {
-    /// Loads a blob from a file.
+    /// Creates a new bytecode [`Blob`] from a vector of bytes.
+    pub fn new_bytecode(bytes: Vec<u8>) -> Self {
+        let content = BlobContent::new(bytes);
+        Blob {
+            id: BlobId::new_bytecode(&content),
+            content,
+        }
+    }
+
+    /// Loads a data blob from a file.
     pub async fn load_data_blob_from_file(path: impl AsRef<Path>) -> io::Result<Self> {
-        let blob_content = BlobContent {
-            bytes: fs::read(path)?,
-        };
+        let blob_content = BlobContent::load_from_file(path).await?;
         Ok(blob_content.with_data_blob_id())
+    }
+
+    /// Loads a bytecode blob from a file.
+    pub async fn load_bytecode_blob_from_file(path: impl AsRef<Path>) -> io::Result<Self> {
+        let blob_content = BlobContent::load_from_file(path).await?;
+        Ok(blob_content.with_bytecode_blob_id())
     }
 
     /// A content-addressed blob ID i.e. the hash of the `Blob`.
@@ -903,6 +935,7 @@ impl<'a> Deserialize<'a> for Blob {
         fn get_blob_id(blob_type: &BlobType, blob: &BlobContent) -> BlobId {
             match blob_type {
                 BlobType::Data => BlobId::new_data(blob),
+                BlobType::Bytecode => BlobId::new_bytecode(blob),
             }
         }
 

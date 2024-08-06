@@ -19,7 +19,7 @@ use assert_matches::assert_matches;
 use async_graphql::Request;
 use counter::CounterAbi;
 use linera_base::{
-    data_types::{Amount, Blob, OracleResponse},
+    data_types::{Amount, Blob, BlobContent, OracleResponse},
     identifiers::{
         AccountOwner, ApplicationId, ChainDescription, ChainId, Destination, Owner, StreamId,
         StreamName,
@@ -28,7 +28,7 @@ use linera_base::{
 };
 use linera_chain::data_types::{CertificateValue, EventRecord, MessageAction, OutgoingMessage};
 use linera_execution::{
-    Bytecode, Message, MessageKind, Operation, ResourceControlPolicy, SystemMessage,
+    Message, MessageKind, Operation, ResourceControlPolicy, SystemMessage,
     UserApplicationDescription, WasmRuntime,
 };
 use linera_storage::Storage;
@@ -104,17 +104,6 @@ where
         .add_initial_chain(ChainDescription::Root(1), Amount::ONE)
         .await?;
 
-    let cert = creator
-        .subscribe_to_published_bytecodes(publisher.chain_id)
-        .await
-        .unwrap()
-        .unwrap();
-    publisher
-        .receive_certificate_and_update_validators(cert)
-        .await
-        .unwrap();
-    publisher.process_inbox().await.unwrap();
-
     let (contract_path, service_path) =
         linera_execution::wasm_test::get_example_bytecode_paths("counter")?;
 
@@ -163,8 +152,8 @@ where
 
     let (bytecode_id, cert) = publisher
         .publish_bytecode(
-            Bytecode::load_from_file(contract_path).await?,
-            Bytecode::load_from_file(service_path).await?,
+            BlobContent::load_from_file(contract_path).await?,
+            BlobContent::load_from_file(service_path).await?,
         )
         .await
         .unwrap()
@@ -324,24 +313,13 @@ where
         .await
         .unwrap();
 
-    let cert = creator
-        .subscribe_to_published_bytecodes(publisher.chain_id)
-        .await
-        .unwrap()
-        .unwrap();
-    publisher
-        .receive_certificate_and_update_validators(cert)
-        .await
-        .unwrap();
-    publisher.process_inbox().await.unwrap();
-
     let (bytecode_id1, cert1) = {
         let (contract_path, service_path) =
             linera_execution::wasm_test::get_example_bytecode_paths("counter")?;
         publisher
             .publish_bytecode(
-                Bytecode::load_from_file(contract_path).await?,
-                Bytecode::load_from_file(service_path).await?,
+                BlobContent::load_from_file(contract_path).await?,
+                BlobContent::load_from_file(service_path).await?,
             )
             .await
             .unwrap()
@@ -353,8 +331,8 @@ where
             linera_execution::wasm_test::get_example_bytecode_paths("meta_counter")?;
         publisher
             .publish_bytecode(
-                Bytecode::load_from_file(contract_path).await?,
-                Bytecode::load_from_file(service_path).await?,
+                BlobContent::load_from_file(contract_path).await?,
+                BlobContent::load_from_file(service_path).await?,
             )
             .await
             .unwrap()
@@ -596,8 +574,8 @@ where
             linera_execution::wasm_test::get_example_bytecode_paths(bytecode_name)?;
         sender
             .publish_bytecode(
-                Bytecode::load_from_file(contract_path).await?,
-                Bytecode::load_from_file(service_path).await?,
+                BlobContent::load_from_file(contract_path).await?,
+                BlobContent::load_from_file(service_path).await?,
             )
             .await
             .unwrap()
@@ -673,7 +651,7 @@ where
     assert!(messages.iter().any(|msg| matches!(
         &msg.bundle.messages[0].message,
         Message::System(SystemMessage::RegisterApplications { applications })
-        if applications.iter().any(|app| app.bytecode_location.certificate_hash == pub_cert.hash())
+        if applications.iter().any(|app| app.bytecode_id == bytecode_id.forget_abi())
     )));
     assert!(messages
         .iter()
@@ -809,8 +787,8 @@ where
             linera_execution::wasm_test::get_example_bytecode_paths("social")?;
         receiver
             .publish_bytecode(
-                Bytecode::load_from_file(contract_path).await?,
-                Bytecode::load_from_file(service_path).await?,
+                BlobContent::load_from_file(contract_path).await?,
+                BlobContent::load_from_file(service_path).await?,
             )
             .await
             .unwrap()

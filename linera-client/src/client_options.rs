@@ -286,10 +286,6 @@ pub enum ClientCommand {
         #[arg(long)]
         subscriber: Option<ChainId>,
 
-        /// Chain ID.
-        #[arg(long)]
-        publisher: Option<ChainId>,
-
         /// System channel available in the system application.
         #[arg(long)]
         channel: SystemChannel,
@@ -300,10 +296,6 @@ pub enum ClientCommand {
         /// Chain ID (must be one of our chains).
         #[arg(long)]
         subscriber: Option<ChainId>,
-
-        /// Chain ID.
-        #[arg(long)]
-        publisher: Option<ChainId>,
 
         /// System channel available in the system application.
         #[arg(long)]

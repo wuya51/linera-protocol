@@ -24,9 +24,7 @@ use linera_base::{
 };
 use linera_client::{config::GenesisConfig, wallet::Wallet};
 use linera_core::worker::Notification;
-use linera_execution::{
-    committee::ValidatorName, system::SystemChannel, Bytecode, ResourceControlPolicy,
-};
+use linera_execution::{committee::ValidatorName, system::SystemChannel, ResourceControlPolicy};
 use linera_version::VersionInfo;
 use serde::{de::DeserializeOwned, ser::Serialize};
 use serde_json::{json, Value};
@@ -931,8 +929,8 @@ impl NodeService {
         contract: PathBuf,
         service: PathBuf,
     ) -> Result<BytecodeId<Abi, Parameters, InstantiationArgument>> {
-        let contract_code = Bytecode::load_from_file(&contract).await?;
-        let service_code = Bytecode::load_from_file(&service).await?;
+        let contract_code = BlobContent::load_from_file(&contract).await?;
+        let service_code = BlobContent::load_from_file(&service).await?;
         let query = format!(
             "mutation {{ publishBytecode(chainId: {}, contract: {}, service: {}) }}",
             chain_id.to_value(),

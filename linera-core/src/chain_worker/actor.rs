@@ -31,8 +31,6 @@ use tokio::{
     task::JoinHandle,
 };
 use tracing::{instrument, trace, warn};
-#[cfg(with_testing)]
-use {linera_base::identifiers::BytecodeId, linera_execution::BytecodeLocation};
 
 use super::{config::ChainWorkerConfig, state::ChainWorkerState};
 use crate::{
@@ -76,13 +74,6 @@ where
         callback: oneshot::Sender<Result<Response, WorkerError>>,
     },
 
-    /// Read the [`BytecodeLocation`] for a requested [`BytecodeId`].
-    #[cfg(with_testing)]
-    ReadBytecodeLocation {
-        bytecode_id: BytecodeId,
-        callback: oneshot::Sender<Result<Option<BytecodeLocation>, WorkerError>>,
-    },
-
     /// Describe an application.
     DescribeApplication {
         application_id: UserApplicationId,
@@ -110,7 +101,6 @@ where
     /// Process a validated block issued for this multi-owner chain.
     ProcessValidatedBlock {
         certificate: Certificate,
-        hashed_certificate_values: Vec<HashedCertificateValue>,
         blobs: Vec<Blob>,
         callback: oneshot::Sender<Result<(ChainInfoResponse, NetworkActions, bool), WorkerError>>,
     },
@@ -118,7 +108,6 @@ where
     /// Process a confirmed block (a commit).
     ProcessConfirmedBlock {
         certificate: Certificate,
-        hashed_certificate_values: Vec<HashedCertificateValue>,
         blobs: Vec<Blob>,
         callback: oneshot::Sender<Result<(ChainInfoResponse, NetworkActions), WorkerError>>,
     },
@@ -259,13 +248,6 @@ where
                 ChainWorkerRequest::QueryApplication { query, callback } => callback
                     .send(self.worker.query_application(query).await)
                     .is_ok(),
-                #[cfg(with_testing)]
-                ChainWorkerRequest::ReadBytecodeLocation {
-                    bytecode_id,
-                    callback,
-                } => callback
-                    .send(self.worker.read_bytecode_location(bytecode_id).await)
-                    .is_ok(),
                 ChainWorkerRequest::DescribeApplication {
                     application_id,
                     callback,
@@ -286,33 +268,23 @@ where
                     .is_ok(),
                 ChainWorkerRequest::ProcessValidatedBlock {
                     certificate,
-                    hashed_certificate_values,
                     blobs,
                     callback,
                 } => callback
                     .send(
                         self.worker
-                            .process_validated_block(
-                                certificate,
-                                &hashed_certificate_values,
-                                &blobs,
-                            )
+                            .process_validated_block(certificate, &blobs)
                             .await,
                     )
                     .is_ok(),
                 ChainWorkerRequest::ProcessConfirmedBlock {
                     certificate,
-                    hashed_certificate_values,
                     blobs,
                     callback,
                 } => callback
                     .send(
                         self.worker
-                            .process_confirmed_block(
-                                certificate,
-                                &hashed_certificate_values,
-                                &blobs,
-                            )
+                            .process_confirmed_block(certificate, &blobs)
                             .await,
                     )
                     .is_ok(),
@@ -393,14 +365,6 @@ where
                 .debug_struct("ChainWorkerRequest::QueryApplication")
                 .field("query", &query)
                 .finish_non_exhaustive(),
-            #[cfg(with_testing)]
-            ChainWorkerRequest::ReadBytecodeLocation {
-                bytecode_id,
-                callback: _callback,
-            } => formatter
-                .debug_struct("ChainWorkerRequest::ReadBytecodeLocation")
-                .field("bytecode_id", &bytecode_id)
-                .finish_non_exhaustive(),
             ChainWorkerRequest::DescribeApplication {
                 application_id,
                 callback: _callback,
@@ -431,24 +395,20 @@ where
                 .finish_non_exhaustive(),
             ChainWorkerRequest::ProcessValidatedBlock {
                 certificate,
-                hashed_certificate_values,
                 blobs,
                 callback: _callback,
             } => formatter
                 .debug_struct("ChainWorkerRequest::ProcessValidatedBlock")
                 .field("certificate", &certificate)
-                .field("hashed_certificate_values", &hashed_certificate_values)
                 .field("blobs", &blobs)
                 .finish_non_exhaustive(),
             ChainWorkerRequest::ProcessConfirmedBlock {
                 certificate,
-                hashed_certificate_values,
                 blobs,
                 callback: _callback,
             } => formatter
                 .debug_struct("ChainWorkerRequest::ProcessConfirmedBlock")
                 .field("certificate", &certificate)
-                .field("hashed_certificate_values", &hashed_certificate_values)
                 .field("blobs", &blobs)
                 .finish_non_exhaustive(),
             ChainWorkerRequest::ProcessCrossChainUpdate {
