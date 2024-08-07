@@ -3222,7 +3222,6 @@ async fn test_cross_chain_helper() -> anyhow::Result<()> {
     Ok(())
 }
 
-#[ignore]
 #[test_case(MemoryStorageBuilder::default(); "memory")]
 #[cfg_attr(feature = "rocksdb", test_case(RocksDbStorageBuilder::new().await; "rocks_db"))]
 #[cfg_attr(feature = "dynamodb", test_case(DynamoDbStorageBuilder::default(); "dynamo_db"))]

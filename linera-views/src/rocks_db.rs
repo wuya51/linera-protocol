@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use std::{
+    collections::{btree_map::Entry, BTreeMap},
     ffi::OsString,
     ops::{Bound, Bound::Excluded},
     path::PathBuf,
-    sync::Arc,
+    sync::{Arc, LazyLock, Mutex},
 };
 
 use futures::future::join_all;
@@ -46,11 +47,12 @@ const MAX_KEY_SIZE: usize = 8388208;
 /// The RocksDB client that we use.
 pub type DB = rocksdb::DBWithThreadMode<rocksdb::MultiThreaded>;
 
-/// The internal client
+/// The inner client
 #[derive(Clone)]
-pub struct RocksDbStoreInternal {
+struct RocksDbStoreInternal {
     db: Arc<DB>,
     path_buf: PathBuf,
+    namespace: String,
     max_stream_queries: usize,
     cache_size: usize,
 }
@@ -70,6 +72,15 @@ impl CacheSize for RocksDbStoreConfig {
     }
 }
 
+#[derive(Default)]
+struct RocksDbStores {
+    stores: BTreeMap<(String, Vec<u8>), RocksDbStoreInternal>,
+}
+
+/// The global variables of the RocksDB stores
+static ROCKSDB_STORES: LazyLock<Mutex<RocksDbStores>> =
+    LazyLock::new(|| Mutex::new(RocksDbStores::default()));
+
 impl RocksDbStoreInternal {
     fn check_namespace(namespace: &str) -> Result<(), RocksDbStoreError> {
         if !namespace
@@ -81,8 +92,9 @@ impl RocksDbStoreInternal {
         Ok(())
     }
 
-    fn connect_from_path(
+    fn build(
         path_buf: PathBuf,
+        namespace: &str,
         max_stream_queries: usize,
         cache_size: usize,
         root_key: &[u8],
@@ -95,12 +107,42 @@ impl RocksDbStoreInternal {
         let mut options = rocksdb::Options::default();
         options.create_if_missing(true);
         let db = DB::open(&options, full_path_buf)?;
+        let namespace = namespace.to_string();
         Ok(RocksDbStoreInternal {
             db: Arc::new(db),
             path_buf,
+            namespace,
             max_stream_queries,
             cache_size,
         })
+    }
+
+    fn connect_from_path(
+        path_buf: PathBuf,
+        namespace: &str,
+        max_stream_queries: usize,
+        cache_size: usize,
+        root_key: &[u8],
+    ) -> Result<RocksDbStoreInternal, RocksDbStoreError> {
+        let mut rocksdb_stores = ROCKSDB_STORES.lock().unwrap();
+        let pair = (namespace.to_string(), root_key.to_vec());
+        match rocksdb_stores.stores.entry(pair) {
+            Entry::Occupied(entry) => {
+                let entry = entry.into_mut();
+                Ok(entry.clone())
+            }
+            Entry::Vacant(entry) => {
+                let store = Self::build(
+                    path_buf,
+                    namespace,
+                    max_stream_queries,
+                    cache_size,
+                    root_key,
+                )?;
+                entry.insert(store.clone());
+                Ok(store)
+            }
+        }
     }
 }
 
@@ -316,14 +358,26 @@ impl AdminKeyValueStore for RocksDbStoreInternal {
         path_buf.push(namespace);
         let max_stream_queries = config.common_config.max_stream_queries;
         let cache_size = config.common_config.cache_size;
-        RocksDbStoreInternal::connect_from_path(path_buf, max_stream_queries, cache_size, root_key)
+        RocksDbStoreInternal::connect_from_path(
+            path_buf,
+            namespace,
+            max_stream_queries,
+            cache_size,
+            root_key,
+        )
     }
 
     fn clone_with_root_key(&self, root_key: &[u8]) -> Result<Self, RocksDbStoreError> {
         let path_buf = self.path_buf.clone();
         let max_stream_queries = self.max_stream_queries;
         let cache_size = self.cache_size;
-        RocksDbStoreInternal::connect_from_path(path_buf, max_stream_queries, cache_size, root_key)
+        RocksDbStoreInternal::connect_from_path(
+            path_buf,
+            &self.namespace,
+            max_stream_queries,
+            cache_size,
+            root_key,
+        )
     }
 
     async fn list_all(config: &Self::Config) -> Result<Vec<String>, RocksDbStoreError> {
