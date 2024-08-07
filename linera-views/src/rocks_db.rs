@@ -367,7 +367,7 @@ impl AdminKeyValueStore for RocksDbStoreInternal {
         Self::check_namespace(namespace)?;
         let mut path_buf = config.path_buf.clone();
         path_buf.push(namespace);
-        std::fs::create_dir(path_buf)?;
+        std::fs::create_dir_all(path_buf)?;
         Ok(())
     }
 
