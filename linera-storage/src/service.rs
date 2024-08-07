@@ -24,9 +24,15 @@ impl ServiceStorage<TestClock> {
         let store_config = service_config_from_endpoint(endpoint).expect("store_config");
         let namespace = generate_test_namespace();
         let root_key = &[];
-        ServiceStorage::new_for_testing(store_config, &namespace, root_key, wasm_runtime, TestClock::new())
-            .await
-            .expect("storage")
+        ServiceStorage::new_for_testing(
+            store_config,
+            &namespace,
+            root_key,
+            wasm_runtime,
+            TestClock::new(),
+        )
+        .await
+        .expect("storage")
     }
 
     pub async fn new_for_testing(

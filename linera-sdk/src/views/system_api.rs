@@ -97,10 +97,7 @@ impl ReadableKeyValueStore<ViewError> for KeyValueStore {
         Ok(self.wit_api.contains_key_wait(promise))
     }
 
-    async fn contains_keys(
-        &self,
-        keys: Vec<Vec<u8>>,
-    ) -> Result<Vec<bool>, ViewError> {
+    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, ViewError> {
         for key in &keys {
             ensure!(key.len() <= Self::MAX_KEY_SIZE, ViewError::KeyTooLong);
         }
@@ -121,20 +118,14 @@ impl ReadableKeyValueStore<ViewError> for KeyValueStore {
         Ok(self.wit_api.read_multi_values_bytes_wait(promise))
     }
 
-    async fn read_value_bytes(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<Vec<u8>>, ViewError> {
+    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, ViewError> {
         ensure!(key.len() <= Self::MAX_KEY_SIZE, ViewError::KeyTooLong);
         let promise = self.wit_api.read_value_bytes_new(key);
         yield_once().await;
         Ok(self.wit_api.read_value_bytes_wait(promise))
     }
 
-    async fn find_keys_by_prefix(
-        &self,
-        key_prefix: &[u8],
-    ) -> Result<Self::Keys, ViewError> {
+    async fn find_keys_by_prefix(&self, key_prefix: &[u8]) -> Result<Self::Keys, ViewError> {
         ensure!(
             key_prefix.len() <= Self::MAX_KEY_SIZE,
             ViewError::KeyTooLong

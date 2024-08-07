@@ -5,6 +5,8 @@ use std::collections::BTreeSet;
 
 use anyhow::Result;
 use async_trait::async_trait;
+#[cfg(any(with_dynamodb, with_rocksdb, with_scylladb))]
+use linera_views::common::AdminKeyValueStore as _;
 #[cfg(with_scylladb)]
 use linera_views::scylla_db::{create_scylla_db_test_store, ScyllaDbContext, ScyllaDbStore};
 use linera_views::{
@@ -29,8 +31,6 @@ use linera_views::{
     },
     views::{CryptoHashRootView, HashableView, Hasher, RootView, View, ViewError},
 };
-#[cfg(any(with_dynamodb,with_rocksdb,with_scylladb))]
-use linera_views::common::{AdminKeyValueStore as _};
 #[cfg(with_dynamodb)]
 use linera_views::{
     dynamo_db::{

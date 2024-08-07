@@ -273,7 +273,13 @@ impl MemoryStore {
         if !MemoryStore::sync_exists(&memory_stores, namespace) {
             MemoryStore::sync_create(&mut memory_stores, namespace);
         }
-        MemoryStore::sync_connect(&mut memory_stores, config, namespace, root_key, kill_on_drop)
+        MemoryStore::sync_connect(
+            &mut memory_stores,
+            config,
+            namespace,
+            root_key,
+            kill_on_drop,
+        )
     }
 
     /// Creates a `MemoryStore` from a number of queries and a namespace.
@@ -329,7 +335,13 @@ impl AdminKeyValueStore for MemoryStore {
             .lock()
             .expect("MEMORY_STORES lock should not be poisoned");
         let kill_on_drop = false;
-        Self::sync_connect(&mut memory_stores, config, namespace, root_key, kill_on_drop)
+        Self::sync_connect(
+            &mut memory_stores,
+            config,
+            namespace,
+            root_key,
+            kill_on_drop,
+        )
     }
 
     fn clone_with_root_key(&self, root_key: &[u8]) -> Result<Self, MemoryStoreError> {
@@ -345,7 +357,13 @@ impl AdminKeyValueStore for MemoryStore {
             .expect("MEMORY_STORES lock should not be poisoned");
         let kill_on_drop = self.kill_on_drop;
         let namespace = &self.namespace;
-        Self::sync_connect(&mut memory_stores, &config, namespace, root_key, kill_on_drop)
+        Self::sync_connect(
+            &mut memory_stores,
+            &config,
+            namespace,
+            root_key,
+            kill_on_drop,
+        )
     }
 
     async fn list_all(_config: &Self::Config) -> Result<Vec<String>, MemoryStoreError> {

@@ -22,9 +22,15 @@ impl MemoryStorage<TestClock> {
         let store_config = create_memory_store_test_config();
         let namespace = generate_test_namespace();
         let root_key = &[];
-        MemoryStorage::new_for_testing(store_config, &namespace, root_key, wasm_runtime, TestClock::new())
-            .await
-            .expect("storage")
+        MemoryStorage::new_for_testing(
+            store_config,
+            &namespace,
+            root_key,
+            wasm_runtime,
+            TestClock::new(),
+        )
+        .await
+        .expect("storage")
     }
 
     pub async fn new_for_testing(
@@ -34,9 +40,13 @@ impl MemoryStorage<TestClock> {
         wasm_runtime: Option<WasmRuntime>,
         clock: TestClock,
     ) -> Result<Self, MemoryStoreError> {
-        let storage =
-            DbStorageInner::<MemoryStore>::new_for_testing(store_config, namespace, root_key, wasm_runtime)
-                .await?;
+        let storage = DbStorageInner::<MemoryStore>::new_for_testing(
+            store_config,
+            namespace,
+            root_key,
+            wasm_runtime,
+        )
+        .await?;
         Ok(Self::create(storage, clock))
     }
 }

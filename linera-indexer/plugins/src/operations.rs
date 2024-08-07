@@ -112,7 +112,12 @@ static NAME: &str = "operations";
 #[async_trait::async_trait]
 impl<S> Plugin<S> for OperationsPlugin<ContextFromStore<(), S>>
 where
-    S: AdminKeyValueStore<Error = <S as KeyValueStore>::Error> + KeyValueStore + Clone + Send + Sync + 'static,
+    S: AdminKeyValueStore<Error = <S as KeyValueStore>::Error>
+        + KeyValueStore
+        + Clone
+        + Send
+        + Sync
+        + 'static,
     <S as KeyValueStore>::Error: From<bcs::Error> + Send + Sync + std::error::Error + 'static,
     ViewError: From<<S as KeyValueStore>::Error>,
 {

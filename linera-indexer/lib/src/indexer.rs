@@ -58,7 +58,12 @@ enum LatestBlock {
 
 impl<S> Indexer<S>
 where
-    S: AdminKeyValueStore<Error = <S as KeyValueStore>::Error> + KeyValueStore + Clone + Send + Sync + 'static,
+    S: AdminKeyValueStore<Error = <S as KeyValueStore>::Error>
+        + KeyValueStore
+        + Clone
+        + Send
+        + Sync
+        + 'static,
     <S as KeyValueStore>::Error: From<bcs::Error>
         + From<DatabaseConsistencyError>
         + Send
@@ -70,7 +75,8 @@ where
     /// Loads the indexer using a database backend with an `indexer` prefix.
     pub async fn load(store: S) -> Result<Self, IndexerError> {
         let root_key = "indexer".as_bytes().to_vec();
-        let store = store.clone_with_root_key(&root_key)
+        let store = store
+            .clone_with_root_key(&root_key)
             .map_err(|_e| IndexerError::CloneWithRootKeyError)?;
         let context = ContextFromStore::create(store, ())
             .await

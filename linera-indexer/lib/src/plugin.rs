@@ -72,12 +72,18 @@ pub async fn load<S, V: View<ContextFromStore<(), S>>>(
     name: &str,
 ) -> Result<Arc<Mutex<V>>, IndexerError>
 where
-    S: AdminKeyValueStore<Error = <S as KeyValueStore>::Error> + KeyValueStore + Clone + Send + Sync + 'static,
+    S: AdminKeyValueStore<Error = <S as KeyValueStore>::Error>
+        + KeyValueStore
+        + Clone
+        + Send
+        + Sync
+        + 'static,
     <S as KeyValueStore>::Error: From<bcs::Error> + Send + Sync + std::error::Error + 'static,
     ViewError: From<<S as KeyValueStore>::Error>,
 {
     let root_key = name.as_bytes().to_vec();
-    let store = store.clone_with_root_key(&root_key)
+    let store = store
+        .clone_with_root_key(&root_key)
         .map_err(|_e| IndexerError::CloneWithRootKeyError)?;
     let context = ContextFromStore::create(store, ())
         .await

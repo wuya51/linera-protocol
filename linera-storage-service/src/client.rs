@@ -72,10 +72,7 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClientInternal {
         self.max_stream_queries
     }
 
-    async fn read_value_bytes(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<Vec<u8>>, ServiceStoreError> {
+    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, ServiceStoreError> {
         ensure!(key.len() <= MAX_KEY_SIZE, ServiceStoreError::KeyTooLong);
         let mut full_key = self.namespace.clone();
         full_key.extend(&self.root_key);
@@ -113,10 +110,7 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClientInternal {
         Ok(test)
     }
 
-    async fn contains_keys(
-        &self,
-        keys: Vec<Vec<u8>>,
-    ) -> Result<Vec<bool>, ServiceStoreError> {
+    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, ServiceStoreError> {
         let mut full_keys = Vec::new();
         for key in keys {
             ensure!(key.len() <= MAX_KEY_SIZE, ServiceStoreError::KeyTooLong);
@@ -380,7 +374,11 @@ impl AdminKeyValueStore for ServiceStoreClientInternal {
     type Error = ServiceStoreError;
     type Config = ServiceStoreConfig;
 
-    async fn connect(config: &Self::Config, namespace: &str, root_key: &[u8]) -> Result<Self, ServiceStoreError> {
+    async fn connect(
+        config: &Self::Config,
+        namespace: &str,
+        root_key: &[u8],
+    ) -> Result<Self, ServiceStoreError> {
         let endpoint = format!("http://{}", config.endpoint);
         let endpoint = Endpoint::from_shared(endpoint)?;
         let client = StoreProcessorClient::connect(endpoint).await?;
@@ -546,10 +544,7 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClient {
         self.store.max_stream_queries()
     }
 
-    async fn read_value_bytes(
-        &self,
-        key: &[u8],
-    ) -> Result<Option<Vec<u8>>, ServiceStoreError> {
+    async fn read_value_bytes(&self, key: &[u8]) -> Result<Option<Vec<u8>>, ServiceStoreError> {
         self.store.read_value_bytes(key).await
     }
 
@@ -557,10 +552,7 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClient {
         self.store.contains_key(key).await
     }
 
-    async fn contains_keys(
-        &self,
-        keys: Vec<Vec<u8>>,
-    ) -> Result<Vec<bool>, ServiceStoreError> {
+    async fn contains_keys(&self, keys: Vec<Vec<u8>>) -> Result<Vec<bool>, ServiceStoreError> {
         self.store.contains_keys(keys).await
     }
 
@@ -582,9 +574,7 @@ impl ReadableKeyValueStore<ServiceStoreError> for ServiceStoreClient {
         &self,
         key_prefix: &[u8],
     ) -> Result<Vec<(Vec<u8>, Vec<u8>)>, ServiceStoreError> {
-        self.store
-            .find_key_values_by_prefix(key_prefix)
-            .await
+        self.store.find_key_values_by_prefix(key_prefix).await
     }
 }
 
@@ -608,7 +598,11 @@ impl AdminKeyValueStore for ServiceStoreClient {
     type Error = ServiceStoreError;
     type Config = ServiceStoreConfig;
 
-    async fn connect(config: &Self::Config, namespace: &str, root_key: &[u8]) -> Result<Self, ServiceStoreError> {
+    async fn connect(
+        config: &Self::Config,
+        namespace: &str,
+        root_key: &[u8],
+    ) -> Result<Self, ServiceStoreError> {
         let store = ServiceStoreClientInternal::connect(config, namespace, root_key).await?;
         #[cfg(with_metrics)]
         let store = MeteredStore::new(&STORAGE_SERVICE_METRICS, store);
@@ -644,12 +638,13 @@ impl AdminKeyValueStore for ServiceStoreClient {
 }
 
 impl ServiceStoreClient {
-    fn inner_clone_with_root_key(&self, root_key: &[u8]) -> Result<ServiceStoreClientInternal, ServiceStoreError> {
+    fn inner_clone_with_root_key(
+        &self,
+        root_key: &[u8],
+    ) -> Result<ServiceStoreClientInternal, ServiceStoreError> {
         #[cfg(with_metrics)]
         {
-            self.store
-                .store
-                .clone_with_root_key(root_key)
+            self.store.store.clone_with_root_key(root_key)
         }
         #[cfg(not(with_metrics))]
         {

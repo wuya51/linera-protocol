@@ -40,9 +40,13 @@ impl RocksDbStorage<TestClock> {
         wasm_runtime: Option<WasmRuntime>,
         clock: TestClock,
     ) -> Result<Self, RocksDbStoreError> {
-        let storage =
-            DbStorageInner::<RocksDbStore>::new_for_testing(store_config, namespace, root_key, wasm_runtime)
-                .await?;
+        let storage = DbStorageInner::<RocksDbStore>::new_for_testing(
+            store_config,
+            namespace,
+            root_key,
+            wasm_runtime,
+        )
+        .await?;
         Ok(Self::create(storage, clock))
     }
 }

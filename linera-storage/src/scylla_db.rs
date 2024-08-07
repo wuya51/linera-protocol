@@ -22,9 +22,15 @@ impl ScyllaDbStorage<TestClock> {
         let store_config = create_scylla_db_test_config().await;
         let namespace = generate_test_namespace();
         let root_key = &[];
-        ScyllaDbStorage::new_for_testing(store_config, &namespace, root_key, wasm_runtime, TestClock::new())
-            .await
-            .expect("storage")
+        ScyllaDbStorage::new_for_testing(
+            store_config,
+            &namespace,
+            root_key,
+            wasm_runtime,
+            TestClock::new(),
+        )
+        .await
+        .expect("storage")
     }
 
     pub async fn new_for_testing(
@@ -34,9 +40,13 @@ impl ScyllaDbStorage<TestClock> {
         wasm_runtime: Option<WasmRuntime>,
         clock: TestClock,
     ) -> Result<Self, ScyllaDbStoreError> {
-        let storage =
-            DbStorageInner::<ScyllaDbStore>::new_for_testing(store_config, namespace, root_key, wasm_runtime)
-                .await?;
+        let storage = DbStorageInner::<ScyllaDbStore>::new_for_testing(
+            store_config,
+            namespace,
+            root_key,
+            wasm_runtime,
+        )
+        .await?;
         Ok(Self::create(storage, clock))
     }
 }

@@ -3033,7 +3033,8 @@ async fn test_cross_chain_helper() -> anyhow::Result<()> {
     let namespace = generate_test_namespace();
     let root_key = &[];
     let store =
-        MemoryStorage::new_for_testing(store_config, &namespace, root_key, None, TestClock::new()).await?;
+        MemoryStorage::new_for_testing(store_config, &namespace, root_key, None, TestClock::new())
+            .await?;
     let (committee, worker) = init_worker(store, true);
     let committees = BTreeMap::from_iter([(Epoch::from(1), committee.clone())]);
 

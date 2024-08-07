@@ -107,37 +107,33 @@ impl ServiceStoreServer {
         keys: Vec<Vec<u8>>,
     ) -> Result<Vec<Option<Vec<u8>>>, Status> {
         match &self.store {
-            ServiceStoreServerInternal::Memory(store) => store
-                .read_multi_values_bytes(keys)
-                .await
-                .map_err(|e| {
+            ServiceStoreServerInternal::Memory(store) => {
+                store.read_multi_values_bytes(keys).await.map_err(|e| {
                     Status::unknown(format!("Memory error {:?} at read_multi_values_bytes", e))
-                }),
+                })
+            }
             #[cfg(feature = "rocksdb")]
-            ServiceStoreServerInternal::RocksDb(store) => store
-                .read_multi_values_bytes(keys)
-                .await
-                .map_err(|e| {
+            ServiceStoreServerInternal::RocksDb(store) => {
+                store.read_multi_values_bytes(keys).await.map_err(|e| {
                     Status::unknown(format!("RocksDB error {:?} at read_multi_values_bytes", e))
-                }),
+                })
+            }
         }
     }
 
     pub async fn find_keys_by_prefix(&self, key_prefix: &[u8]) -> Result<Vec<Vec<u8>>, Status> {
         match &self.store {
-            ServiceStoreServerInternal::Memory(store) => store
-                .find_keys_by_prefix(key_prefix)
-                .await
-                .map_err(|e| {
+            ServiceStoreServerInternal::Memory(store) => {
+                store.find_keys_by_prefix(key_prefix).await.map_err(|e| {
                     Status::unknown(format!("Memory error {:?} at find_keys_by_prefix", e))
-                }),
+                })
+            }
             #[cfg(feature = "rocksdb")]
-            ServiceStoreServerInternal::RocksDb(store) => store
-                .find_keys_by_prefix(key_prefix)
-                .await
-                .map_err(|e| {
+            ServiceStoreServerInternal::RocksDb(store) => {
+                store.find_keys_by_prefix(key_prefix).await.map_err(|e| {
                     Status::unknown(format!("RocksDB error {:?} at find_keys_by_prefix", e))
-                }),
+                })
+            }
         }
     }
 
@@ -580,7 +576,8 @@ async fn main() {
     let root_key = &[];
     let (store, endpoint) = match options {
         ServiceStoreServerOptions::Memory { endpoint } => {
-            let store = MemoryStore::new(common_config.max_stream_queries, namespace, root_key).unwrap();
+            let store =
+                MemoryStore::new(common_config.max_stream_queries, namespace, root_key).unwrap();
             let store = ServiceStoreServerInternal::Memory(store);
             (store, endpoint)
         }

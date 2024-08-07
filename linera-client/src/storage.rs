@@ -523,7 +523,8 @@ where
     match config {
         StoreConfig::Memory(config, namespace) => {
             let store_config = MemoryStoreConfig::new(config.common_config.max_stream_queries);
-            let mut storage = MemoryStorage::new(store_config, &namespace, ROOT_KEY, wasm_runtime).await?;
+            let mut storage =
+                MemoryStorage::new(store_config, &namespace, ROOT_KEY, wasm_runtime).await?;
             genesis_config.initialize_storage(&mut storage).await?;
             job.run(storage).await
         }
@@ -560,25 +561,29 @@ pub async fn full_initialize_storage(
         }
         StoreConfig::Service(config, namespace) => {
             let wasm_runtime = None;
-            let mut storage = ServiceStorage::initialize(config, &namespace, ROOT_KEY, wasm_runtime).await?;
+            let mut storage =
+                ServiceStorage::initialize(config, &namespace, ROOT_KEY, wasm_runtime).await?;
             genesis_config.initialize_storage(&mut storage).await
         }
         #[cfg(feature = "rocksdb")]
         StoreConfig::RocksDb(config, namespace) => {
             let wasm_runtime = None;
-            let mut storage = RocksDbStorage::initialize(config, &namespace, ROOT_KEY, wasm_runtime).await?;
+            let mut storage =
+                RocksDbStorage::initialize(config, &namespace, ROOT_KEY, wasm_runtime).await?;
             genesis_config.initialize_storage(&mut storage).await
         }
         #[cfg(feature = "dynamodb")]
         StoreConfig::DynamoDb(config, namespace) => {
             let wasm_runtime = None;
-            let mut storage = DynamoDbStorage::initialize(config, &namespace, ROOT_KEY, wasm_runtime).await?;
+            let mut storage =
+                DynamoDbStorage::initialize(config, &namespace, ROOT_KEY, wasm_runtime).await?;
             genesis_config.initialize_storage(&mut storage).await
         }
         #[cfg(feature = "scylladb")]
         StoreConfig::ScyllaDb(config, namespace) => {
             let wasm_runtime = None;
-            let mut storage = ScyllaDbStorage::initialize(config, &namespace, ROOT_KEY, wasm_runtime).await?;
+            let mut storage =
+                ScyllaDbStorage::initialize(config, &namespace, ROOT_KEY, wasm_runtime).await?;
             genesis_config.initialize_storage(&mut storage).await
         }
     }

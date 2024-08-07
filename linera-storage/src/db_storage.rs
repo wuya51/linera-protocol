@@ -409,7 +409,12 @@ impl TestClock {
 #[async_trait]
 impl<Client, C> Storage for DbStorage<Client, C>
 where
-    Client: AdminKeyValueStore<Error = <Client as KeyValueStore>::Error> + KeyValueStore + Clone + Send + Sync + 'static,
+    Client: AdminKeyValueStore<Error = <Client as KeyValueStore>::Error>
+        + KeyValueStore
+        + Clone
+        + Send
+        + Sync
+        + 'static,
     C: Clock + Clone + Send + Sync + 'static,
     ViewError: From<<Client as KeyValueStore>::Error>,
     <Client as KeyValueStore>::Error:
@@ -443,11 +448,7 @@ where
 
     async fn contains_hashed_certificate_value(&self, hash: CryptoHash) -> Result<bool, ViewError> {
         let value_key = bcs::to_bytes(&BaseKey::CertificateValue(hash))?;
-        let test = self
-            .client
-            .client
-            .contains_key(&value_key)
-            .await?;
+        let test = self.client.client.contains_key(&value_key).await?;
         #[cfg(with_metrics)]
         CONTAINS_HASHED_CERTIFICATE_VALUE_COUNTER
             .with_label_values(&[])
@@ -696,11 +697,7 @@ where
         let cert_key = bcs::to_bytes(&BaseKey::Certificate(hash))?;
         let value_key = bcs::to_bytes(&BaseKey::CertificateValue(hash))?;
         let keys = vec![cert_key, value_key];
-        let values = self
-            .client
-            .client
-            .read_multi_values_bytes(keys)
-            .await;
+        let values = self.client.client.read_multi_values_bytes(keys).await;
         if values.is_ok() {
             #[cfg(with_metrics)]
             READ_CERTIFICATE_COUNTER.with_label_values(&[]).inc();
@@ -819,7 +816,8 @@ where
         wasm_runtime: Option<WasmRuntime>,
     ) -> Result<Self, <Client as KeyValueStore>::Error> {
         let storage =
-            DbStorageInner::<Client>::initialize(store_config, namespace, root_key, wasm_runtime).await?;
+            DbStorageInner::<Client>::initialize(store_config, namespace, root_key, wasm_runtime)
+                .await?;
         Ok(Self::create(storage, WallClock))
     }
 
@@ -829,7 +827,8 @@ where
         root_key: &[u8],
         wasm_runtime: Option<WasmRuntime>,
     ) -> Result<Self, <Client as KeyValueStore>::Error> {
-        let storage = DbStorageInner::<Client>::make(store_config, namespace, root_key, wasm_runtime).await?;
+        let storage =
+            DbStorageInner::<Client>::make(store_config, namespace, root_key, wasm_runtime).await?;
         Ok(Self::create(storage, WallClock))
     }
 }
