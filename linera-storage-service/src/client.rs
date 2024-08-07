@@ -327,11 +327,13 @@ impl ServiceStoreClientInternal {
         let operation = match operation {
             WriteOperation::Delete { key } => {
                 let mut full_key = self.namespace.clone();
+                full_key.extend(&self.root_key);
                 full_key.extend(key);
                 Operation::Delete(full_key)
             }
             WriteOperation::Put { key, value } => {
                 let mut full_key = self.namespace.clone();
+                full_key.extend(&self.root_key);
                 full_key.extend(key);
                 Operation::Put(KeyValue {
                     key: full_key,
@@ -340,6 +342,7 @@ impl ServiceStoreClientInternal {
             }
             WriteOperation::DeletePrefix { key_prefix } => {
                 let mut full_key_prefix = self.namespace.clone();
+                full_key_prefix.extend(&self.root_key);
                 full_key_prefix.extend(key_prefix);
                 Operation::DeletePrefix(full_key_prefix)
             }
