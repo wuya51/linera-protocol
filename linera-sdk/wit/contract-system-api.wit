@@ -55,7 +55,8 @@ interface contract-system-api {
     }
 
     record bytecode-id {
-        message-id: message-id,
+        contract-blob-hash: crypto-hash,
+        service-blob-hash: crypto-hash,
     }
 
     record chain-id {

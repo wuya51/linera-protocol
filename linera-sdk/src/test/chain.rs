@@ -14,17 +14,14 @@ use std::{
 use cargo_toml::Manifest;
 use linera_base::{
     crypto::{KeyPair, PublicKey},
-    data_types::BlockHeight,
+    data_types::{BlobContent, BlockHeight},
     identifiers::{ApplicationId, BytecodeId, ChainDescription, ChainId, MessageId},
 };
 use linera_chain::{data_types::Certificate, ChainError, ChainExecutionContext};
 use linera_core::{data_types::ChainInfoQuery, worker::WorkerError};
 use linera_execution::{
-    system::{
-        SystemChannel, SystemExecutionError, SystemMessage, SystemOperation,
-        CREATE_APPLICATION_MESSAGE_INDEX, PUBLISH_BYTECODE_MESSAGE_INDEX,
-    },
-    Bytecode, ExecutionError, Message, Query, Response,
+    system::{SystemExecutionError, SystemOperation, CREATE_APPLICATION_MESSAGE_INDEX},
+    ExecutionError, Query, Response,
 };
 use serde::Serialize;
 use tokio::{fs, sync::Mutex};
@@ -119,7 +116,7 @@ impl ActiveChain {
 
         self.validator
             .worker()
-            .fully_handle_certificate(certificate.clone(), vec![], vec![])
+            .fully_handle_certificate(certificate.clone(), vec![])
             .await
             .expect("Rejected certificate");
 
@@ -173,6 +170,8 @@ impl ActiveChain {
             .expect("Failed to obtain absolute application repository path");
         Self::build_bytecodes_in(&repository_path).await;
         let (contract, service) = self.find_bytecodes_in(&repository_path).await;
+        let contract_blob_hash = contract.clone().with_bytecode_blob_id().id().hash;
+        let service_blob_hash = service.clone().with_bytecode_blob_id().id().hash;
 
         let certificate = self
             .add_block(|block| {
@@ -184,19 +183,9 @@ impl ActiveChain {
             .value()
             .executed_block()
             .expect("Failed to obtain executed block from certificate");
-        assert_eq!(executed_block.messages().len(), 1);
-        let message_id = MessageId {
-            chain_id: executed_block.block.chain_id,
-            height: executed_block.block.height,
-            index: PUBLISH_BYTECODE_MESSAGE_INDEX,
-        };
+        assert_eq!(executed_block.messages().len(), 0);
 
-        self.add_block(|block| {
-            block.with_messages_from(&certificate);
-        })
-        .await;
-
-        BytecodeId::new(message_id).with_abi()
+        BytecodeId::new(contract_blob_hash, service_blob_hash).with_abi()
     }
 
     /// Compiles the crate in the `repository` path.
@@ -219,8 +208,8 @@ impl ActiveChain {
     /// Searches the Cargo manifest of the crate calling this method for binaries to use as the
     /// contract and service bytecodes.
     ///
-    /// Returns a tuple with the loaded contract and service [`Bytecode`]s.
-    async fn find_bytecodes_in(&self, repository: &Path) -> (Bytecode, Bytecode) {
+    /// Returns a tuple with the loaded contract and service [`BlobContent`]s.
+    async fn find_bytecodes_in(&self, repository: &Path) -> (BlobContent, BlobContent) {
         let manifest_path = repository.join("Cargo.toml");
         let cargo_manifest =
             Manifest::from_path(manifest_path).expect("Failed to load Cargo.toml manifest");
@@ -253,10 +242,10 @@ impl ActiveChain {
         let service_path = base_path.join(format!("{}.wasm", service_binary));
 
         (
-            Bytecode::load_from_file(contract_path)
+            BlobContent::load_from_file(contract_path)
                 .await
                 .expect("Failed to load contract bytecode from file"),
-            Bytecode::load_from_file(service_path)
+            BlobContent::load_from_file(service_path)
                 .await
                 .expect("Failed to load service bytecode from file"),
         )
@@ -298,38 +287,6 @@ impl ActiveChain {
             .height()
     }
 
-    /// Subscribes this microchain to the bytecodes published on the `publisher_id` microchain.
-    pub async fn subscribe_to_published_bytecodes_from(
-        &mut self,
-        publisher_id: ChainId,
-    ) -> Certificate {
-        let publisher = self.validator.get_chain(&publisher_id);
-
-        let subscribe_certificate = self
-            .add_block(|block| {
-                block.with_system_operation(SystemOperation::Subscribe {
-                    chain_id: publisher.id(),
-                    channel: SystemChannel::PublishedBytecodes,
-                });
-            })
-            .await;
-
-        assert_eq!(subscribe_certificate.outgoing_message_count(), 1);
-
-        let accept_certificate = publisher
-            .add_block(|block| {
-                block.with_messages_from(&subscribe_certificate);
-            })
-            .await;
-
-        assert_eq!(accept_certificate.outgoing_message_count(), 1);
-
-        self.add_block(|block| {
-            block.with_system_messages_from(&accept_certificate, SystemChannel::PublishedBytecodes);
-        })
-        .await
-    }
-
     /// Creates an application on this microchain, using the bytecode referenced by `bytecode_id`.
     ///
     /// Returns the [`ApplicationId`] of the created application.
@@ -352,16 +309,6 @@ impl ActiveChain {
         Parameters: Serialize,
         InstantiationArgument: Serialize,
     {
-        if self.needs_bytecode_location(bytecode_id).await {
-            self.subscribe_to_published_bytecodes_from(bytecode_id.message_id.chain_id)
-                .await;
-            let certificate = self.find_bytecode_location(bytecode_id).await;
-            self.add_block(|block| {
-                block.with_system_messages_from(&certificate, SystemChannel::PublishedBytecodes);
-            })
-            .await;
-        }
-
         let parameters = serde_json::to_vec(&parameters).unwrap();
         let instantiation_argument = serde_json::to_vec(&instantiation_argument).unwrap();
 
@@ -395,51 +342,6 @@ impl ActiveChain {
             bytecode_id: bytecode_id.just_abi(),
             creation,
         }
-    }
-
-    /// Checks if the `bytecode_id` is missing from this microchain.
-    async fn needs_bytecode_location<Abi, Parameters, InstantiationArgument>(
-        &self,
-        bytecode_id: BytecodeId<Abi, Parameters, InstantiationArgument>,
-    ) -> bool {
-        self.validator
-            .worker()
-            .read_bytecode_location(self.id(), bytecode_id.forget_abi())
-            .await
-            .expect("Failed to check known bytecode locations")
-            .is_none()
-    }
-
-    /// Finds the certificate that sends the message with the bytecode location of `bytecode_id`.
-    async fn find_bytecode_location<Abi, Parameters, InstantiationArgument>(
-        &self,
-        bytecode_id: BytecodeId<Abi, Parameters, InstantiationArgument>,
-    ) -> Certificate {
-        for height in bytecode_id.message_id.height.0.. {
-            let certificate = self
-                .validator
-                .worker()
-                .read_certificate(bytecode_id.message_id.chain_id, height.into())
-                .await
-                .expect("Failed to load certificate to search for bytecode location")
-                .expect("Bytecode location not found");
-
-            let messages = certificate
-                .value()
-                .messages()
-                .expect("Unexpected certificate value");
-            if messages.iter().flatten().any(|message| {
-                matches!(
-                    &message.message,
-                    Message::System(SystemMessage::BytecodeLocations { locations })
-                        if locations.iter().any(|(id, _)| id == &bytecode_id.forget_abi())
-                )
-            }) {
-                return certificate;
-            }
-        }
-
-        panic!("Bytecode not found in the chain it was supposed to be published on");
     }
 
     /// Registers on this chain an application created on another chain.

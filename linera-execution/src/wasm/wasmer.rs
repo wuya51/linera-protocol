@@ -6,6 +6,7 @@
 use std::{marker::Unpin, sync::LazyLock};
 
 use bytes::Bytes;
+use linera_base::data_types::BlobContent;
 use linera_witty::{
     wasmer::{EntrypointInstance, InstanceBuilder},
     ExportTo,
@@ -21,7 +22,7 @@ use super::{
 };
 use crate::{
     wasm::{WasmContractModule, WasmServiceModule},
-    Bytecode, ContractRuntime, ExecutionError, FinalizeContext, MessageContext, OperationContext,
+    ContractRuntime, ExecutionError, FinalizeContext, MessageContext, OperationContext,
     QueryContext, ServiceRuntime,
 };
 
@@ -59,7 +60,7 @@ pub struct WasmerServiceInstance<Runtime> {
 
 impl WasmContractModule {
     /// Creates a new [`WasmContractModule`] using Wasmer with the provided bytecodes.
-    pub async fn from_wasmer(contract_bytecode: Bytecode) -> Result<Self, WasmExecutionError> {
+    pub async fn from_wasmer(contract_bytecode: BlobContent) -> Result<Self, WasmExecutionError> {
         let mut contract_cache = CONTRACT_CACHE.lock().await;
         let (engine, module) = contract_cache
             .get_or_insert_with(contract_bytecode, CachedContractModule::new)
@@ -94,11 +95,11 @@ where
 
 impl WasmServiceModule {
     /// Creates a new [`WasmServiceModule`] using Wasmer with the provided bytecodes.
-    pub async fn from_wasmer(service_bytecode: Bytecode) -> Result<Self, WasmExecutionError> {
+    pub async fn from_wasmer(service_bytecode: BlobContent) -> Result<Self, WasmExecutionError> {
         let mut service_cache = SERVICE_CACHE.lock().await;
         let module = service_cache
             .get_or_insert_with(service_bytecode, |bytecode| {
-                Module::new(&*SERVICE_ENGINE, bytecode).map_err(anyhow::Error::from)
+                Module::new(&*SERVICE_ENGINE, &bytecode.bytes).map_err(anyhow::Error::from)
             })
             .map_err(WasmExecutionError::LoadServiceModule)?;
         Ok(WasmServiceModule::Wasmer { module })
@@ -200,7 +201,7 @@ pub struct CachedContractModule {
     compiled_bytecode: Bytes,
 }
 
-pub fn add_metering(bytecode: Bytecode) -> anyhow::Result<Bytecode> {
+pub fn add_metering(bytecode: BlobContent) -> anyhow::Result<BlobContent> {
     struct WasmtimeRules;
 
     impl gas_metering::Rules for WasmtimeRules {
@@ -239,17 +240,15 @@ pub fn add_metering(bytecode: Bytecode) -> anyhow::Result<Bytecode> {
     )
     .map_err(|_| anyhow::anyhow!("failed to instrument module"))?;
 
-    Ok(Bytecode {
-        bytes: instrumented_module.into_bytes()?,
-    })
+    Ok(BlobContent::new(instrumented_module.into_bytes()?))
 }
 
 impl CachedContractModule {
     /// Creates a new [`CachedContractModule`] by compiling a `contract_bytecode`.
-    pub fn new(contract_bytecode: Bytecode) -> Result<Self, anyhow::Error> {
+    pub fn new(contract_bytecode: BlobContent) -> Result<Self, anyhow::Error> {
         let module = Module::new(
             &Self::create_compilation_engine(),
-            add_metering(contract_bytecode)?,
+            &add_metering(contract_bytecode)?.bytes,
         )?;
         let compiled_bytecode = module.serialize()?;
         Ok(CachedContractModule { compiled_bytecode })

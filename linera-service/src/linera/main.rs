@@ -29,7 +29,6 @@ use linera_client::{
     wallet::{UserChain, Wallet},
 };
 use linera_core::{
-    client::ChainClientError,
     data_types::{ChainInfoQuery, ClientOutcome},
     local_node::LocalNodeClient,
     node::LocalValidatorNodeProvider,
@@ -290,7 +289,6 @@ impl Runnable for Job {
 
             Subscribe {
                 subscriber,
-                publisher,
                 channel,
             } => {
                 let subscriber = subscriber.unwrap_or_else(|| context.default_chain());
@@ -305,14 +303,6 @@ impl Runnable for Job {
                                 SystemChannel::Admin => {
                                     chain_client.subscribe_to_new_committees().await
                                 }
-                                SystemChannel::PublishedBytecodes => {
-                                    let publisher = publisher.ok_or_else(|| {
-                                        ChainClientError::InternalError("Incorrect chain ID")
-                                    })?;
-                                    chain_client
-                                        .subscribe_to_published_bytecodes(publisher)
-                                        .await
-                                }
                             }
                         }
                     })
@@ -325,7 +315,6 @@ impl Runnable for Job {
 
             Unsubscribe {
                 subscriber,
-                publisher,
                 channel,
             } => {
                 let subscriber = subscriber.unwrap_or_else(|| context.default_chain());
@@ -340,15 +329,6 @@ impl Runnable for Job {
                                 SystemChannel::Admin => {
                                     info!("Unsubscribing from admin channel");
                                     chain_client.unsubscribe_from_new_committees().await
-                                }
-                                SystemChannel::PublishedBytecodes => {
-                                    let publisher = publisher.ok_or_else(|| {
-                                        ChainClientError::InternalError("Incorrect chain ID")
-                                    })?;
-                                    info!("Unsubscribing from publisher {}", publisher);
-                                    chain_client
-                                        .unsubscribe_from_published_bytecodes(publisher)
-                                        .await
                                 }
                             }
                         }
@@ -797,7 +777,6 @@ impl Runnable for Job {
                     .map(|certificate| {
                         HandleCertificateRequest {
                             certificate: certificate.clone(),
-                            hashed_certificate_values: vec![],
                             blobs: vec![],
                             wait_for_outgoing_messages: true,
                         }

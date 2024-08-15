@@ -10,18 +10,17 @@
 
 use std::{borrow::Cow, mem, ops::Range};
 
+use linera_base::data_types::BlobContent;
 use wasm_encoder::{Encode, Function};
 use wasmparser::{BinaryReaderError, FunctionBody, Parser, Payload};
-
-use crate::Bytecode;
 
 /// Sanitizes the input `bytecode`, ensuring that all functions end with a `return` instruction.
 ///
 /// Returns the sanitized bytecode.
-pub fn sanitize(bytecode: Bytecode) -> Result<Bytecode, anyhow::Error> {
-    let changed_bytecode = match Sanitizer::new(bytecode.as_ref()).sanitize()? {
+pub fn sanitize(bytecode: BlobContent) -> Result<BlobContent, anyhow::Error> {
+    let changed_bytecode = match Sanitizer::new(&bytecode.bytes).sanitize()? {
         Cow::Borrowed(_) => None,
-        Cow::Owned(changed_bytecode) => Some(Bytecode::new(changed_bytecode)),
+        Cow::Owned(changed_bytecode) => Some(BlobContent::new(changed_bytecode)),
     };
 
     Ok(changed_bytecode.unwrap_or(bytecode))
@@ -407,8 +406,9 @@ impl<'bytecode> Sanitizer<'bytecode> {
 
 #[cfg(all(test, with_wasmer))]
 mod tests {
+    use linera_base::data_types::BlobContent;
+
     use super::sanitize;
-    use crate::Bytecode;
 
     /// Tests if an already sanitized bytecode isn't changed.
     #[test]
@@ -485,7 +485,7 @@ mod tests {
             )
         "#;
 
-        let input = Bytecode::new(wasmer::wat2wasm(wat.as_bytes()).unwrap().into());
+        let input = BlobContent::new(wasmer::wat2wasm(wat.as_bytes()).unwrap().into());
         let output = sanitize(input.clone()).unwrap();
 
         assert_eq!(input, output);
@@ -569,13 +569,13 @@ mod tests {
             )
         "#;
 
-        let input = Bytecode::new(wasmer::wat2wasm(wat.as_bytes()).unwrap().into_owned());
+        let input = BlobContent::new(wasmer::wat2wasm(wat.as_bytes()).unwrap().into_owned());
         let output = sanitize(input.clone()).unwrap();
 
         assert_ne!(input, output);
 
         // Check that the sanitized output can be used by a runtime
         let store = wasmer::Store::default();
-        wasmer::Module::new(&store, &output).unwrap();
+        wasmer::Module::new(&store, &output.bytes).unwrap();
     }
 }

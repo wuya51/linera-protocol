@@ -916,11 +916,6 @@ where
         .await
         .unwrap()
         .unwrap();
-    client2
-        .subscribe_to_published_bytecodes(ChainId::root(1))
-        .await
-        .unwrap()
-        .unwrap();
     client1.synchronize_from_validators().await.unwrap();
     let (certificates, _) = client1.process_inbox().await.unwrap();
     let block = certificates[0].value().block().unwrap();
@@ -1505,7 +1500,7 @@ where
 
     let description2 = ChainDescription::Root(2);
     let chain_id2 = ChainId::from(description2);
-    let mut client2_a = builder
+    let client2_a = builder
         .add_initial_chain(description2, Amount::from_tokens(10))
         .await?;
     let pub_key2_a = client2_a.public_key().await.unwrap();
@@ -1668,7 +1663,7 @@ where
     let client1 = builder
         .add_initial_chain(description1, Amount::ZERO)
         .await?;
-    let mut client2_a = builder
+    let client2_a = builder
         .add_initial_chain(description2, Amount::from_tokens(10))
         .await?;
     let pub_key2_a = client2_a.public_key().await.unwrap();
@@ -1805,7 +1800,7 @@ where
     let client2 = builder
         .add_initial_chain(description2, Amount::ZERO)
         .await?;
-    let mut client3_a = builder
+    let client3_a = builder
         .add_initial_chain(description3, Amount::from_tokens(10))
         .await?;
     let pub_key3_a = client3_a.public_key().await.unwrap();
@@ -1823,7 +1818,7 @@ where
         .execute_operation(owner_change_op.clone())
         .await
         .unwrap();
-    let mut client3_b = builder
+    let client3_b = builder
         .make_client(
             chain_id3,
             key_pair3_b,
@@ -1904,7 +1899,6 @@ where
         .handle_certificate(
             validated_block_certificate,
             Vec::new(),
-            Vec::new(),
             CrossChainMessageDelivery::Blocking,
         )
         .await;
@@ -1975,7 +1969,6 @@ where
         .node(3)
         .handle_certificate(
             validated_block_certificate,
-            Vec::new(),
             Vec::new(),
             CrossChainMessageDelivery::Blocking,
         )
@@ -2404,7 +2397,6 @@ where
         .node(0)
         .handle_certificate(
             validated_block_certificate,
-            Vec::new(),
             Vec::new(),
             CrossChainMessageDelivery::Blocking,
         )

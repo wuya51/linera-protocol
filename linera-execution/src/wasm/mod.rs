@@ -24,6 +24,7 @@ use std::sync::Arc;
 #[cfg(with_metrics)]
 use std::sync::LazyLock;
 
+use linera_base::data_types::BlobContent;
 #[cfg(with_metrics)]
 use linera_base::prometheus_util::{self, MeasureLatency};
 #[cfg(with_metrics)]
@@ -40,8 +41,8 @@ pub use self::{
     system_api::{ContractSystemApi, ServiceSystemApi, SystemApiData, ViewSystemApi},
 };
 use crate::{
-    Bytecode, ContractSyncRuntimeHandle, ExecutionError, ServiceSyncRuntimeHandle,
-    UserContractInstance, UserContractModule, UserServiceInstance, UserServiceModule, WasmRuntime,
+    ContractSyncRuntimeHandle, ExecutionError, ServiceSyncRuntimeHandle, UserContractInstance,
+    UserContractModule, UserServiceInstance, UserServiceModule, WasmRuntime,
 };
 
 #[cfg(with_metrics)]
@@ -85,7 +86,7 @@ pub enum WasmContractModule {
 impl WasmContractModule {
     /// Creates a new [`WasmContractModule`] using the WebAssembly module with the provided bytecodes.
     pub async fn new(
-        contract_bytecode: Bytecode,
+        contract_bytecode: BlobContent,
         runtime: WasmRuntime,
     ) -> Result<Self, WasmExecutionError> {
         let contract_bytecode = if runtime.needs_sanitizer() {
@@ -114,7 +115,7 @@ impl WasmContractModule {
         runtime: WasmRuntime,
     ) -> Result<Self, WasmExecutionError> {
         Self::new(
-            Bytecode::load_from_file(contract_bytecode_file)
+            BlobContent::load_from_file(contract_bytecode_file)
                 .await
                 .map_err(anyhow::Error::from)
                 .map_err(WasmExecutionError::LoadContractModule)?,
@@ -159,7 +160,7 @@ pub enum WasmServiceModule {
 impl WasmServiceModule {
     /// Creates a new [`WasmServiceModule`] using the WebAssembly module with the provided bytecodes.
     pub async fn new(
-        service_bytecode: Bytecode,
+        service_bytecode: BlobContent,
         runtime: WasmRuntime,
     ) -> Result<Self, WasmExecutionError> {
         match runtime {
@@ -181,7 +182,7 @@ impl WasmServiceModule {
         runtime: WasmRuntime,
     ) -> Result<Self, WasmExecutionError> {
         Self::new(
-            Bytecode::load_from_file(service_bytecode_file)
+            BlobContent::load_from_file(service_bytecode_file)
                 .await
                 .map_err(anyhow::Error::from)
                 .map_err(WasmExecutionError::LoadServiceModule)?,

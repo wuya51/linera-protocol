@@ -58,9 +58,7 @@ pub use crate::wasm::{
     ViewSystemApi, WasmContractModule, WasmExecutionError, WasmServiceModule,
 };
 pub use crate::{
-    applications::{
-        ApplicationRegistryView, BytecodeLocation, UserApplicationDescription, UserApplicationId,
-    },
+    applications::{ApplicationRegistryView, UserApplicationDescription, UserApplicationId},
     execution::ExecutionStateView,
     execution_state_actor::ExecutionRequest,
     policy::ResourceControlPolicy,
@@ -1037,40 +1035,6 @@ impl From<SystemResponse> for Response {
 impl From<Vec<u8>> for Response {
     fn from(response: Vec<u8>) -> Self {
         Response::User(response)
-    }
-}
-
-/// A WebAssembly module's bytecode.
-#[derive(Clone, Deserialize, Eq, Hash, PartialEq, Serialize)]
-pub struct Bytecode {
-    #[serde(with = "serde_bytes")]
-    bytes: Vec<u8>,
-}
-
-impl Bytecode {
-    /// Creates a new [`Bytecode`] instance using the provided `bytes`.
-    #[allow(dead_code)]
-    pub(crate) fn new(bytes: Vec<u8>) -> Self {
-        Bytecode { bytes }
-    }
-
-    #[cfg(with_fs)]
-    /// Load bytecode from a Wasm module file.
-    pub async fn load_from_file(path: impl AsRef<std::path::Path>) -> std::io::Result<Self> {
-        let bytes = tokio::fs::read(path).await?;
-        Ok(Bytecode { bytes })
-    }
-}
-
-impl AsRef<[u8]> for Bytecode {
-    fn as_ref(&self) -> &[u8] {
-        self.bytes.as_ref()
-    }
-}
-
-impl std::fmt::Debug for Bytecode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> Result<(), std::fmt::Error> {
-        f.debug_tuple("Bytecode").finish()
     }
 }
 

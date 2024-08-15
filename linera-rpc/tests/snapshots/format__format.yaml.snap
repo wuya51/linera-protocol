@@ -62,6 +62,8 @@ BlobType:
   ENUM:
     0:
       Data: UNIT
+    1:
+      Bytecode: UNIT
 Block:
   STRUCT:
     - chain_id:
@@ -116,27 +118,18 @@ BlockProposal:
         TYPENAME: Owner
     - signature:
         TYPENAME: Signature
-    - hashed_certificate_values:
-        SEQ:
-          TYPENAME: CertificateValue
     - blobs:
         SEQ:
           TYPENAME: Blob
     - validated_block_certificate:
         OPTION:
           TYPENAME: LiteCertificate
-Bytecode:
-  STRUCT:
-    - bytes: BYTES
 BytecodeId:
   STRUCT:
-    - message_id:
-        TYPENAME: MessageId
-BytecodeLocation:
-  STRUCT:
-    - certificate_hash:
+    - contract_blob_hash:
         TYPENAME: CryptoHash
-    - transaction_index: U32
+    - service_blob_hash:
+        TYPENAME: CryptoHash
 Certificate:
   STRUCT:
     - value:
@@ -418,9 +411,6 @@ HandleCertificateRequest:
     - certificate:
         TYPENAME: Certificate
     - wait_for_outgoing_messages: BOOL
-    - hashed_certificate_values:
-        SEQ:
-          TYPENAME: CertificateValue
     - blobs:
         SEQ:
           TYPENAME: Blob
@@ -555,12 +545,10 @@ NodeError:
           - height:
               TYPENAME: BlockHeight
     7:
-      ApplicationBytecodesOrBlobsNotFound:
-        TUPLE:
-          - SEQ:
-              TYPENAME: BytecodeLocation
-          - SEQ:
-              TYPENAME: BlobId
+      BlobsNotFound:
+        NEWTYPE:
+          SEQ:
+            TYPENAME: BlobId
     8:
       MissingCertificateValue: UNIT
     9:
@@ -847,8 +835,6 @@ SystemChannel:
   ENUM:
     0:
       Admin: UNIT
-    1:
-      PublishedBytecodes: UNIT
 SystemMessage:
   ENUM:
     0:
@@ -903,31 +889,19 @@ SystemMessage:
           - subscription:
               TYPENAME: ChannelSubscription
     6:
-      BytecodePublished:
-        STRUCT:
-          - transaction_index: U32
-    7:
       ApplicationCreated: UNIT
-    8:
-      BytecodeLocations:
-        STRUCT:
-          - locations:
-              SEQ:
-                TUPLE:
-                  - TYPENAME: BytecodeId
-                  - TYPENAME: BytecodeLocation
-    9:
+    7:
       RegisterApplications:
         STRUCT:
           - applications:
               SEQ:
                 TYPENAME: UserApplicationDescription
-    10:
+    8:
       Notify:
         STRUCT:
           - id:
               TYPENAME: ChainId
-    11:
+    9:
       RequestApplication:
         NEWTYPE:
           TYPENAME: ApplicationId
@@ -1000,9 +974,9 @@ SystemOperation:
       PublishBytecode:
         STRUCT:
           - contract:
-              TYPENAME: Bytecode
+              TYPENAME: BlobContent
           - service:
-              TYPENAME: Bytecode
+              TYPENAME: BlobContent
     9:
       PublishBlob:
         STRUCT:
@@ -1053,8 +1027,6 @@ UserApplicationDescription:
   STRUCT:
     - bytecode_id:
         TYPENAME: BytecodeId
-    - bytecode_location:
-        TYPENAME: BytecodeLocation
     - creation:
         TYPENAME: MessageId
     - parameters: BYTES

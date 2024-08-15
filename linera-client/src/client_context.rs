@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use futures::Future;
 use linera_base::{
     crypto::KeyPair,
-    data_types::{BlockHeight, Timestamp},
+    data_types::{BlobContent, BlockHeight, Timestamp},
     identifiers::{Account, ChainId},
     ownership::ChainOwnership,
 };
@@ -60,7 +60,6 @@ use {
         data_types::Blob,
         identifiers::{BlobId, BytecodeId},
     },
-    linera_execution::Bytecode,
     std::path::PathBuf,
 };
 
@@ -374,14 +373,18 @@ where
         service: PathBuf,
     ) -> Result<BytecodeId, Error> {
         info!("Loading bytecode files");
-        let contract_bytecode = Bytecode::load_from_file(&contract).await.context(format!(
-            "failed to load contract bytecode from {:?}",
-            &contract
-        ))?;
-        let service_bytecode = Bytecode::load_from_file(&service).await.context(format!(
-            "failed to load service bytecode from {:?}",
-            &service
-        ))?;
+        let contract_bytecode = BlobContent::load_from_file(&contract)
+            .await
+            .context(format!(
+                "failed to load contract bytecode from {:?}",
+                &contract
+            ))?;
+        let service_bytecode = BlobContent::load_from_file(&service)
+            .await
+            .context(format!(
+                "failed to load service bytecode from {:?}",
+                &service
+            ))?;
 
         info!("Publishing bytecode");
         let (bytecode_id, _) = self
@@ -653,7 +656,6 @@ where
                 block.clone(),
                 key_pair,
                 vec![],
-                vec![],
             );
             proposals.push(proposal.into());
             next_recipient = chain.chain_id;
@@ -773,7 +775,7 @@ where
         // Replay the certificates locally.
         for certificate in certificates {
             // No required certificates from other chains: This is only used with benchmark.
-            node.handle_certificate(certificate, vec![], vec![], &mut vec![])
+            node.handle_certificate(certificate, vec![], &mut vec![])
                 .await
                 .unwrap();
         }

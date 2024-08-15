@@ -179,14 +179,11 @@ Subscribe to a system channel
 ###### **Options:**
 
 * `--subscriber <SUBSCRIBER>` — Chain ID (must be one of our chains)
-* `--publisher <PUBLISHER>` — Chain ID
 * `--channel <CHANNEL>` — System channel available in the system application
 
   Possible values:
   - `admin`:
     Channel used to broadcast reconfigurations
-  - `published-bytecodes`:
-    Channel used to broadcast new published bytecodes
 
 
 
@@ -200,14 +197,11 @@ Unsubscribe from a system channel
 ###### **Options:**
 
 * `--subscriber <SUBSCRIBER>` — Chain ID (must be one of our chains)
-* `--publisher <PUBLISHER>` — Chain ID
 * `--channel <CHANNEL>` — System channel available in the system application
 
   Possible values:
   - `admin`:
     Channel used to broadcast reconfigurations
-  - `published-bytecodes`:
-    Channel used to broadcast new published bytecodes
 
 
 

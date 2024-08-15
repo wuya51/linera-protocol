@@ -22,7 +22,8 @@ use linera_base::{
     abi::Abi,
     crypto::{CryptoHash, KeyPair, PublicKey},
     data_types::{
-        Amount, ApplicationPermissions, ArithmeticError, Blob, BlockHeight, Round, Timestamp,
+        Amount, ApplicationPermissions, ArithmeticError, Blob, BlobContent, BlockHeight, Round,
+        Timestamp,
     },
     ensure,
     identifiers::{Account, ApplicationId, BlobId, BytecodeId, ChainId, MessageId, Owner},
@@ -40,10 +41,10 @@ use linera_execution::{
     committee::{Committee, Epoch, ValidatorName},
     system::{
         AdminOperation, OpenChainConfig, Recipient, SystemChannel, SystemOperation, UserData,
-        CREATE_APPLICATION_MESSAGE_INDEX, OPEN_CHAIN_MESSAGE_INDEX, PUBLISH_BYTECODE_MESSAGE_INDEX,
+        CREATE_APPLICATION_MESSAGE_INDEX, OPEN_CHAIN_MESSAGE_INDEX,
     },
-    Bytecode, ExecutionError, Message, Operation, Query, Response, SystemExecutionError,
-    SystemMessage, SystemQuery, SystemResponse, UserApplicationId,
+    ExecutionError, Message, Operation, Query, Response, SystemExecutionError, SystemMessage,
+    SystemQuery, SystemResponse, UserApplicationId,
 };
 use linera_storage::Storage;
 use linera_views::views::ViewError;
@@ -821,7 +822,7 @@ where
         let certificate = self
             .communicate_chain_action(committee, submit_action, value)
             .await?;
-        self.process_certificate(certificate.clone(), vec![], vec![])
+        self.process_certificate(certificate.clone(), vec![])
             .await?;
         if certificate.value().is_confirmed() {
             Ok(certificate)
@@ -997,26 +998,13 @@ where
             .await?;
         self.handle_notifications(&mut notifications);
         // Process the received operations. Download required hashed certificate values if necessary.
-        if let Err(err) = self
-            .process_certificate(certificate.clone(), vec![], vec![])
-            .await
-        {
+        if let Err(err) = self.process_certificate(certificate.clone(), vec![]).await {
             match &err {
-                LocalNodeError::WorkerError(WorkerError::ApplicationBytecodesOrBlobsNotFound(
-                    locations,
-                    blob_ids,
-                )) => {
-                    let values =
-                        LocalNodeClient::<S>::download_hashed_certificate_values(locations, &nodes)
-                            .await;
+                LocalNodeError::WorkerError(WorkerError::BlobsNotFound(blob_ids)) => {
                     let blobs = LocalNodeClient::<S>::download_blobs(blob_ids, &nodes).await;
 
-                    ensure!(
-                        blobs.len() == blob_ids.len() && values.len() == locations.len(),
-                        err
-                    );
-                    self.process_certificate(certificate.clone(), values, blobs)
-                        .await?;
+                    ensure!(blobs.len() == blob_ids.len(), err);
+                    self.process_certificate(certificate.clone(), blobs).await?;
                 }
                 _ => {
                     // The certificate is not as expected. Give up.
@@ -1266,19 +1254,13 @@ where
     async fn process_certificate(
         &self,
         certificate: Certificate,
-        hashed_certificate_values: Vec<HashedCertificateValue>,
         blobs: Vec<Blob>,
     ) -> Result<(), LocalNodeError> {
         let mut notifications = vec![];
         let info = self
             .client
             .local_node
-            .handle_certificate(
-                certificate,
-                hashed_certificate_values,
-                blobs,
-                &mut notifications,
-            )
+            .handle_certificate(certificate, blobs, &mut notifications)
             .await?
             .info;
         self.handle_notifications(&mut notifications);
@@ -1328,7 +1310,7 @@ where
         let certificate = self
             .communicate_chain_action(&committee, action, value)
             .await?;
-        self.process_certificate(certificate.clone(), vec![], vec![])
+        self.process_certificate(certificate.clone(), vec![])
             .await?;
         // The block height didn't increase, but this will communicate the timeout as well.
         self.communicate_chain_updates(
@@ -1473,27 +1455,21 @@ where
                 return Ok(()); // Give up on this validator.
             }
             let hash = cert.hash();
-            let mut values = vec![];
             let mut blobs = vec![];
             while let Err(original_err) = self
                 .client
                 .local_node
-                .handle_certificate(*cert.clone(), values, blobs, notifications)
+                .handle_certificate(*cert.clone(), blobs, notifications)
                 .await
             {
-                if let LocalNodeError::WorkerError(
-                    WorkerError::ApplicationBytecodesOrBlobsNotFound(locations, blob_ids),
-                ) = &original_err
+                if let LocalNodeError::WorkerError(WorkerError::BlobsNotFound(blob_ids)) =
+                    &original_err
                 {
-                    values = LocalNodeClient::<S>::try_download_hashed_certificate_values_from(
-                        locations, node, name,
-                    )
-                    .await;
                     blobs = self
                         .find_missing_blobs_in_validator(blob_ids.clone(), chain_id, name, node)
                         .await?;
 
-                    if blobs.len() == blob_ids.len() && values.len() == locations.len() {
+                    if blobs.len() == blob_ids.len() {
                         continue; // We found the missing blobs: retry.
                     }
                 }
@@ -1675,7 +1651,7 @@ where
 
     #[tracing::instrument(level = "trace", skip(blob_ids))]
     /// Tries to read blobs from either the pending blobs or the local node's cache, or
-    /// the chain manager's pending blobs
+    /// storage
     async fn read_local_blobs(
         &self,
         blob_ids: impl IntoIterator<Item = BlobId>,
@@ -1684,19 +1660,25 @@ where
         for blob_id in blob_ids {
             if let Some(blob) = self.client.local_node.recent_blob(&blob_id).await {
                 blobs.push(blob);
-            } else {
-                let blob = self
-                    .state()
-                    .pending_blobs
-                    .get(&blob_id)
-                    .ok_or_else(|| LocalNodeError::CannotReadLocalBlob {
-                        chain_id: self.chain_id,
-                        blob_id,
-                    })?
-                    .clone();
+                continue;
+            }
+
+            let maybe_blob = self.state().pending_blobs.get(&blob_id).cloned();
+            if let Some(blob) = maybe_blob {
                 self.client.local_node.cache_recent_blob(&blob).await;
                 blobs.push(blob);
+                continue;
             }
+
+            blobs.push(
+                self.storage_client()
+                    .read_blob(blob_id)
+                    .await
+                    .map_err(|_| LocalNodeError::CannotReadLocalBlob {
+                        chain_id: self.chain_id,
+                        blob_id,
+                    })?,
+            );
         }
         Ok(blobs)
     }
@@ -1773,23 +1755,13 @@ where
         };
         // Collect the hashed certificate values required for execution.
         let committee = self.local_committee().await?;
-        let nodes: Vec<_> = self
-            .client
-            .validator_node_provider
-            .make_nodes(&committee)?
-            .collect();
-        let values = self
-            .client
-            .local_node
-            .read_or_download_hashed_certificate_values(&nodes, block.bytecode_locations())
-            .await?;
         let blobs = self.read_local_blobs(block.published_blob_ids()).await?;
         // Create the final block proposal.
         let key_pair = self.key_pair().await?;
         let proposal = if let Some(cert) = manager.requested_locked {
-            BlockProposal::new_retry(round, *cert, &key_pair, values, blobs)
+            BlockProposal::new_retry(round, *cert, &key_pair, blobs)
         } else {
-            BlockProposal::new_initial(round, block.clone(), &key_pair, values, blobs)
+            BlockProposal::new_initial(round, block.clone(), &key_pair, blobs)
         };
         // Check the final block proposal. This will be cheaper after #1401.
         self.client
@@ -2512,25 +2484,44 @@ where
     /// Publishes some bytecode.
     pub async fn publish_bytecode(
         &self,
-        contract: Bytecode,
-        service: Bytecode,
+        contract: BlobContent,
+        service: BlobContent,
     ) -> Result<ClientOutcome<(BytecodeId, Certificate)>, ChainClientError> {
+        let contract_blob = contract.clone().with_bytecode_blob_id();
+        let service_blob = service.clone().with_bytecode_blob_id();
+
+        let contract_blob_id = contract_blob.id();
+        let service_blob_id = service_blob.id();
+        self.publish_blobs(&[contract_blob, service_blob]).await?;
+
         self.execute_operation(Operation::System(SystemOperation::PublishBytecode {
             contract: contract.clone(),
             service: service.clone(),
         }))
         .await?
         .try_map(|certificate| {
-            // The first message of the only operation published the bytecode.
-            let message_id = certificate
-                .value()
-                .executed_block()
-                .and_then(|executed_block| {
-                    executed_block.message_id_for_operation(0, PUBLISH_BYTECODE_MESSAGE_INDEX)
-                })
-                .ok_or_else(|| ChainClientError::InternalError("Failed to publish bytecode"))?;
-            Ok((BytecodeId::new(message_id), certificate))
+            Ok((
+                BytecodeId::new(contract_blob_id.hash, service_blob_id.hash),
+                certificate,
+            ))
         })
+    }
+
+    #[tracing::instrument(level = "trace", skip(blobs))]
+    /// Publishes some blobs.
+    pub async fn publish_blobs(
+        &self,
+        blobs: &[Blob],
+    ) -> Result<ClientOutcome<Certificate>, ChainClientError> {
+        let blob_ids = blobs.iter().map(|blob| blob.id()).collect::<Vec<_>>();
+        self.add_pending_blobs(blobs).await;
+        self.execute_operations(
+            blob_ids
+                .into_iter()
+                .map(|blob_id| Operation::System(SystemOperation::PublishBlob { blob_id }))
+                .collect(),
+        )
+        .await
     }
 
     #[tracing::instrument(level = "trace", skip(blob))]
@@ -2539,18 +2530,11 @@ where
         &self,
         blob: Blob,
     ) -> Result<ClientOutcome<Certificate>, ChainClientError> {
-        self.client.local_node.cache_recent_blob(&blob).await;
-        self.state_mut()
-            .pending_blobs
-            .insert(blob.id(), blob.clone());
-        self.execute_operation(Operation::System(SystemOperation::PublishBlob {
-            blob_id: blob.id(),
-        }))
-        .await
+        self.publish_blobs(&[blob]).await
     }
 
     /// Adds pending blobs
-    pub async fn add_pending_blobs(&mut self, pending_blobs: &[Blob]) {
+    pub async fn add_pending_blobs(&self, pending_blobs: &[Blob]) {
         for blob in pending_blobs {
             self.client.local_node.cache_recent_blob(blob).await;
             self.state_mut()
@@ -2720,32 +2704,6 @@ where
         self.execute_operation(Operation::System(SystemOperation::Unsubscribe {
             chain_id: self.admin_id(),
             channel: SystemChannel::Admin,
-        }))
-        .await
-    }
-
-    #[tracing::instrument(level = "trace")]
-    /// Starts listening to the given chain for published bytecodes.
-    pub async fn subscribe_to_published_bytecodes(
-        &self,
-        chain_id: ChainId,
-    ) -> Result<ClientOutcome<Certificate>, ChainClientError> {
-        self.execute_operation(Operation::System(SystemOperation::Subscribe {
-            chain_id,
-            channel: SystemChannel::PublishedBytecodes,
-        }))
-        .await
-    }
-
-    #[tracing::instrument(level = "trace")]
-    /// Stops listening to the given chain for published bytecodes.
-    pub async fn unsubscribe_from_published_bytecodes(
-        &self,
-        chain_id: ChainId,
-    ) -> Result<ClientOutcome<Certificate>, ChainClientError> {
-        self.execute_operation(Operation::System(SystemOperation::Unsubscribe {
-            chain_id,
-            channel: SystemChannel::PublishedBytecodes,
         }))
         .await
     }

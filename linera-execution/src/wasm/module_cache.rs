@@ -9,9 +9,8 @@
 
 use std::sync::Arc;
 
+use linera_base::data_types::BlobContent;
 use lru::LruCache;
-
-use crate::Bytecode;
 
 /// The default maximum size of the bytecodes stored in cache.
 const DEFAULT_MAX_CACHE_SIZE: u64 = 512 /* MiB */ * 1024 /* KiB */ * 1024 /* bytes */;
@@ -20,7 +19,7 @@ const DEFAULT_MAX_CACHE_SIZE: u64 = 512 /* MiB */ * 1024 /* KiB */ * 1024 /* byt
 ///
 /// The cache prioritizes entries based on their [`Metadata`].
 pub struct ModuleCache<Module> {
-    modules: LruCache<Bytecode, Arc<Module>>,
+    modules: LruCache<BlobContent, Arc<Module>>,
     total_size: u64,
     max_size: u64,
 }
@@ -40,8 +39,8 @@ impl<Module> ModuleCache<Module> {
     /// adding it to the cache if it doesn't already exist in the cache.
     pub fn get_or_insert_with<E>(
         &mut self,
-        bytecode: Bytecode,
-        module_builder: impl FnOnce(Bytecode) -> Result<Module, E>,
+        bytecode: BlobContent,
+        module_builder: impl FnOnce(BlobContent) -> Result<Module, E>,
     ) -> Result<Arc<Module>, E> {
         if let Some(module) = self.get(&bytecode) {
             Ok(module)
@@ -53,13 +52,13 @@ impl<Module> ModuleCache<Module> {
     }
 
     /// Returns a `Module` for the requested `bytecode` if it's in the cache.
-    pub fn get(&mut self, bytecode: &Bytecode) -> Option<Arc<Module>> {
+    pub fn get(&mut self, bytecode: &BlobContent) -> Option<Arc<Module>> {
         self.modules.get(bytecode).cloned()
     }
 
     /// Inserts a `bytecode` and its compiled `module` in the cache.
-    pub fn insert(&mut self, bytecode: Bytecode, module: Arc<Module>) {
-        let bytecode_size = bytecode.as_ref().len() as u64;
+    pub fn insert(&mut self, bytecode: BlobContent, module: Arc<Module>) {
+        let bytecode_size = bytecode.bytes.len() as u64;
 
         if self.total_size + bytecode_size > self.max_size {
             self.reduce_size_to(self.max_size - bytecode_size);
@@ -76,7 +75,7 @@ impl<Module> ModuleCache<Module> {
                 .modules
                 .pop_lru()
                 .expect("Empty cache should have a `total_size` of zero");
-            let bytecode_size = bytecode.as_ref().len() as u64;
+            let bytecode_size = bytecode.bytes.len() as u64;
 
             self.total_size -= bytecode_size;
         }

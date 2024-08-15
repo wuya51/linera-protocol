@@ -5,6 +5,7 @@
 
 use std::{error::Error, sync::LazyLock};
 
+use linera_base::data_types::BlobContent;
 use linera_witty::{wasmtime::EntrypointInstance, ExportTo, Instance};
 use tokio::sync::Mutex;
 use wasmtime::{AsContextMut, Config, Engine, Linker, Module, Store};
@@ -16,7 +17,7 @@ use super::{
 };
 use crate::{
     wasm::{WasmContractModule, WasmServiceModule},
-    Bytecode, ContractRuntime, ExecutionError, FinalizeContext, MessageContext, OperationContext,
+    ContractRuntime, ExecutionError, FinalizeContext, MessageContext, OperationContext,
     QueryContext, ServiceRuntime,
 };
 
@@ -110,11 +111,11 @@ pub struct WasmtimeServiceInstance<Runtime> {
 
 impl WasmContractModule {
     /// Creates a new [`WasmContractModule`] using Wasmtime with the provided bytecodes.
-    pub async fn from_wasmtime(contract_bytecode: Bytecode) -> Result<Self, WasmExecutionError> {
+    pub async fn from_wasmtime(contract_bytecode: BlobContent) -> Result<Self, WasmExecutionError> {
         let mut contract_cache = CONTRACT_CACHE.lock().await;
         let module = contract_cache
             .get_or_insert_with(contract_bytecode, |bytecode| {
-                Module::new(&CONTRACT_ENGINE, bytecode)
+                Module::new(&CONTRACT_ENGINE, bytecode.bytes)
             })
             .map_err(WasmExecutionError::LoadContractModule)?;
         Ok(WasmContractModule::Wasmtime { module })
@@ -147,11 +148,11 @@ where
 
 impl WasmServiceModule {
     /// Creates a new [`WasmServiceModule`] using Wasmtime with the provided bytecodes.
-    pub async fn from_wasmtime(service_bytecode: Bytecode) -> Result<Self, WasmExecutionError> {
+    pub async fn from_wasmtime(service_bytecode: BlobContent) -> Result<Self, WasmExecutionError> {
         let mut service_cache = SERVICE_CACHE.lock().await;
         let module = service_cache
             .get_or_insert_with(service_bytecode, |bytecode| {
-                Module::new(&SERVICE_ENGINE, bytecode)
+                Module::new(&SERVICE_ENGINE, bytecode.bytes)
             })
             .map_err(WasmExecutionError::LoadServiceModule)?;
         Ok(WasmServiceModule::Wasmtime { module })

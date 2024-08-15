@@ -19,9 +19,8 @@ use linera_storage::Storage;
 use linera_views::views::{View, ViewError};
 #[cfg(with_testing)]
 use {
-    linera_base::{crypto::CryptoHash, data_types::BlockHeight, identifiers::BytecodeId},
+    linera_base::{crypto::CryptoHash, data_types::BlockHeight},
     linera_chain::data_types::{Certificate, MessageBundle, Origin},
-    linera_execution::BytecodeLocation,
 };
 
 use super::{check_block_epoch, ChainWorkerState};
@@ -112,18 +111,6 @@ where
         Ok(response)
     }
 
-    /// Returns the [`BytecodeLocation`] for the requested [`BytecodeId`], if it is known by the
-    /// chain.
-    #[cfg(with_testing)]
-    pub(super) async fn read_bytecode_location(
-        &mut self,
-        bytecode_id: BytecodeId,
-    ) -> Result<Option<BytecodeLocation>, WorkerError> {
-        self.0.ensure_is_active()?;
-        let response = self.0.chain.read_bytecode_location(bytecode_id).await?;
-        Ok(response)
-    }
-
     /// Returns an application's description.
     pub(super) async fn describe_application(
         &mut self,
@@ -176,7 +163,6 @@ where
                     forced_oracle_responses,
                 },
             owner,
-            hashed_certificate_values,
             blobs,
             validated_block_certificate,
             signature: _,
@@ -228,18 +214,7 @@ where
         // Verify that all required bytecode hashed certificate values and blobs are available, and no
         // unrelated ones provided.
         self.0
-            .check_no_missing_blobs(
-                block,
-                block.published_blob_ids(),
-                hashed_certificate_values,
-                blobs,
-            )
-            .await?;
-        // Write the values so that the bytecode is available during execution.
-        // TODO(#2199): We should not persist anything in storage before the block is confirmed.
-        self.0
-            .storage
-            .write_hashed_certificate_values(hashed_certificate_values)
+            .check_no_missing_blobs(block.published_blob_ids(), blobs)
             .await?;
         let local_time = self.0.storage.clock().current_time();
         ensure!(

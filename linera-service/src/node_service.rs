@@ -38,8 +38,7 @@ use linera_core::{
 use linera_execution::{
     committee::{Committee, Epoch},
     system::{AdminOperation, Recipient, SystemChannel, UserData},
-    Bytecode, Operation, Query, Response, SystemOperation, UserApplicationDescription,
-    UserApplicationId,
+    Operation, Query, Response, SystemOperation, UserApplicationDescription, UserApplicationId,
 };
 use linera_storage::Storage;
 use linera_views::views::ViewError;
@@ -577,8 +576,8 @@ where
     async fn publish_bytecode(
         &self,
         chain_id: ChainId,
-        contract: Bytecode,
-        service: Bytecode,
+        contract: BlobContent,
+        service: BlobContent,
     ) -> Result<BytecodeId, Error> {
         self.apply_client_command(&chain_id, move |client| {
             let contract = contract.clone();

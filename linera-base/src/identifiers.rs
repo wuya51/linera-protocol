@@ -165,6 +165,8 @@ pub enum BlobType {
     /// A generic data blob.
     #[default]
     Data,
+    /// A blob containing bytecode.
+    Bytecode,
 }
 
 impl Display for BlobType {
@@ -209,16 +211,29 @@ pub struct BlobId {
 }
 
 impl BlobId {
-    /// Creates a new `BlobId` from a `BlobContent`
+    /// Creates a new data `BlobId` from a `BlobContent`
     pub fn new_data(blob_content: &BlobContent) -> Self {
         Self::new_data_from_hash(CryptoHash::new(blob_content))
     }
 
-    /// Creates a new `BlobId` from a hash
+    /// Creates a data new `BlobId` from a hash
     pub fn new_data_from_hash(hash: CryptoHash) -> Self {
         BlobId {
             hash,
             blob_type: BlobType::Data,
+        }
+    }
+
+    /// Creates a new bytecode `BlobId` from a `BlobContent`
+    pub fn new_bytecode(blob_content: &BlobContent) -> Self {
+        Self::new_bytecode_from_hash(CryptoHash::new(blob_content))
+    }
+
+    /// Creates a new bytecode `BlobId` from a hash
+    pub fn new_bytecode_from_hash(hash: CryptoHash) -> Self {
+        BlobId {
+            hash,
+            blob_type: BlobType::Bytecode,
         }
     }
 }
@@ -327,8 +342,10 @@ impl From<ApplicationId> for GenericApplicationId {
 #[derive(WitLoad, WitStore, WitType)]
 #[cfg_attr(with_testing, derive(Default))]
 pub struct BytecodeId<Abi = (), Parameters = (), InstantiationArgument = ()> {
-    /// The message ID that published the bytecode.
-    pub message_id: MessageId,
+    /// The hash of the blob containing the contract bytecode.
+    pub contract_blob_hash: CryptoHash,
+    /// The hash of the blob containing the service bytecode.
+    pub service_blob_hash: CryptoHash,
     #[witty(skip)]
     _phantom: std::marker::PhantomData<(Abi, Parameters, InstantiationArgument)>,
 }
@@ -476,10 +493,11 @@ impl<Abi: PartialEq, Parameters, InstantiationArgument> PartialEq
 {
     fn eq(&self, other: &Self) -> bool {
         let BytecodeId {
-            message_id,
+            contract_blob_hash: contract_blob_id,
+            service_blob_hash: service_blob_id,
             _phantom,
         } = other;
-        self.message_id == *message_id
+        self.contract_blob_hash == *contract_blob_id && self.service_blob_hash == *service_blob_id
     }
 }
 
@@ -493,10 +511,16 @@ impl<Abi: PartialOrd, Parameters, InstantiationArgument> PartialOrd
 {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         let BytecodeId {
-            message_id,
+            contract_blob_hash: contract_blob_id,
+            service_blob_hash: service_blob_id,
             _phantom,
         } = other;
-        self.message_id.partial_cmp(message_id)
+        let cmp = self.contract_blob_hash.partial_cmp(contract_blob_id);
+        if cmp == Some(std::cmp::Ordering::Equal) {
+            self.service_blob_hash.partial_cmp(service_blob_id)
+        } else {
+            cmp
+        }
     }
 }
 
@@ -505,10 +529,16 @@ impl<Abi: Ord, Parameters, InstantiationArgument> Ord
 {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         let BytecodeId {
-            message_id,
+            contract_blob_hash: contract_blob_id,
+            service_blob_hash: service_blob_id,
             _phantom,
         } = other;
-        self.message_id.cmp(message_id)
+        let cmp = self.contract_blob_hash.cmp(contract_blob_id);
+        if cmp == std::cmp::Ordering::Equal {
+            self.service_blob_hash.cmp(service_blob_id)
+        } else {
+            cmp
+        }
     }
 }
 
@@ -517,10 +547,12 @@ impl<Abi, Parameters, InstantiationArgument> Hash
 {
     fn hash<H: Hasher>(&self, state: &mut H) {
         let BytecodeId {
-            message_id,
+            contract_blob_hash: contract_blob_id,
+            service_blob_hash: service_blob_id,
             _phantom,
         } = self;
-        message_id.hash(state);
+        contract_blob_id.hash(state);
+        service_blob_id.hash(state);
     }
 }
 
@@ -529,11 +561,13 @@ impl<Abi, Parameters, InstantiationArgument> Debug
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let BytecodeId {
-            message_id,
+            contract_blob_hash: contract_blob_id,
+            service_blob_hash: service_blob_id,
             _phantom,
         } = self;
         f.debug_struct("BytecodeId")
-            .field("message_id", message_id)
+            .field("contract_blob_id", contract_blob_id)
+            .field("service_blob_id", service_blob_id)
             .finish()
     }
 }
@@ -541,7 +575,8 @@ impl<Abi, Parameters, InstantiationArgument> Debug
 #[derive(Serialize, Deserialize)]
 #[serde(rename = "BytecodeId")]
 struct SerializableBytecodeId {
-    message_id: MessageId,
+    contract_blob_hash: CryptoHash,
+    service_blob_hash: CryptoHash,
 }
 
 impl<Abi, Parameters, InstantiationArgument> Serialize
@@ -551,16 +586,16 @@ impl<Abi, Parameters, InstantiationArgument> Serialize
     where
         S: serde::ser::Serializer,
     {
+        let serializable_bytecode_id = SerializableBytecodeId {
+            contract_blob_hash: self.contract_blob_hash,
+            service_blob_hash: self.service_blob_hash,
+        };
         if serializer.is_human_readable() {
-            let bytes = bcs::to_bytes(&self.message_id).map_err(serde::ser::Error::custom)?;
+            let bytes =
+                bcs::to_bytes(&serializable_bytecode_id).map_err(serde::ser::Error::custom)?;
             serializer.serialize_str(&hex::encode(bytes))
         } else {
-            SerializableBytecodeId::serialize(
-                &SerializableBytecodeId {
-                    message_id: self.message_id,
-                },
-                serializer,
-            )
+            SerializableBytecodeId::serialize(&serializable_bytecode_id, serializer)
         }
     }
 }
@@ -574,17 +609,19 @@ impl<'de, Abi, Parameters, InstantiationArgument> Deserialize<'de>
     {
         if deserializer.is_human_readable() {
             let s = String::deserialize(deserializer)?;
-            let message_id_bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
-            let message_id =
-                bcs::from_bytes(&message_id_bytes).map_err(serde::de::Error::custom)?;
+            let bytecode_id_bytes = hex::decode(s).map_err(serde::de::Error::custom)?;
+            let serializable_bytecode_id: SerializableBytecodeId =
+                bcs::from_bytes(&bytecode_id_bytes).map_err(serde::de::Error::custom)?;
             Ok(BytecodeId {
-                message_id,
+                contract_blob_hash: serializable_bytecode_id.contract_blob_hash,
+                service_blob_hash: serializable_bytecode_id.service_blob_hash,
                 _phantom: std::marker::PhantomData,
             })
         } else {
-            let value = SerializableBytecodeId::deserialize(deserializer)?;
+            let serializable_bytecode_id = SerializableBytecodeId::deserialize(deserializer)?;
             Ok(BytecodeId {
-                message_id: value.message_id,
+                contract_blob_hash: serializable_bytecode_id.contract_blob_hash,
+                service_blob_hash: serializable_bytecode_id.service_blob_hash,
                 _phantom: std::marker::PhantomData,
             })
         }
@@ -592,10 +629,11 @@ impl<'de, Abi, Parameters, InstantiationArgument> Deserialize<'de>
 }
 
 impl BytecodeId {
-    /// Creates a bytecode ID from a message ID.
-    pub fn new(message_id: MessageId) -> Self {
+    /// Creates a bytecode ID from contract/service hashes.
+    pub fn new(contract_blob_hash: CryptoHash, service_blob_hash: CryptoHash) -> Self {
         BytecodeId {
-            message_id,
+            contract_blob_hash,
+            service_blob_hash,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -605,7 +643,8 @@ impl BytecodeId {
         self,
     ) -> BytecodeId<Abi, Parameters, InstantiationArgument> {
         BytecodeId {
-            message_id: self.message_id,
+            contract_blob_hash: self.contract_blob_hash,
+            service_blob_hash: self.service_blob_hash,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -615,7 +654,8 @@ impl<Abi, Parameters, InstantiationArgument> BytecodeId<Abi, Parameters, Instant
     /// Forgets the ABI of a bytecode ID (if any).
     pub fn forget_abi(self) -> BytecodeId {
         BytecodeId {
-            message_id: self.message_id,
+            contract_blob_hash: self.contract_blob_hash,
+            service_blob_hash: self.service_blob_hash,
             _phantom: std::marker::PhantomData,
         }
     }
@@ -623,7 +663,8 @@ impl<Abi, Parameters, InstantiationArgument> BytecodeId<Abi, Parameters, Instant
     /// Leaves just the ABI of a bytecode ID (if any).
     pub fn just_abi(self) -> BytecodeId<Abi> {
         BytecodeId {
-            message_id: self.message_id,
+            contract_blob_hash: self.contract_blob_hash,
+            service_blob_hash: self.service_blob_hash,
             _phantom: std::marker::PhantomData,
         }
     }
