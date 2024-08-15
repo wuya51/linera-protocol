@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ManifestError","MemoryNode","Strictness","WasmerPackageError"],"struct":["FsVolume","MemoryDir","MemoryFile","MemoryVolume","Package"],"trait":["WasmerPackageVolume"]};
