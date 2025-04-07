@@ -14,11 +14,12 @@ A simple blockchain application that demonstrates basic contract and service imp
   - Example of contract-service architecture
 
 ## Directory Structure
-├── Cargo.toml               # Rust project configuration
+```bash
+├── Cargo.toml               # Rust project configuration
 ├── src/
-│   ├── lib.rs                 # Shared types and utilities
-│   └── bin/
-│       ├── contract.rs         # Contract logic implementation
-│       └── service.rs          # Service logic implementation
+│   ├── lib.rs                 # Shared types and utilities
+│   └── bin/
+│       ├── contract.rs         # Contract logic implementation
+│       └── service.rs          # Service logic implementation
 ├── response.rs              # Standardized API response handlers           
-└── README.md   
+└── README.md
